@@ -69,9 +69,11 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
         padded_prompts = (prompts * ((num_prompts + len(prompts) - 1) // len(prompts)))[
             :num_prompts
         ]
+        ic(padded_prompts)
         input_requests: List[DatasetRow] = [
             DatasetRow(p, 0, 512) for p in padded_prompts
         ]
+        ic(input_requests)
         backend = "sglang"
         api_url = f"{base_url}/generate"
 
@@ -188,6 +190,8 @@ def main(args, server_args):
                 server_args.tp_size,
                 "--max-running-requests",
                 batch_size,
+                "--dtype",
+                server_args.dtype,
             ]
         )
 
@@ -260,6 +264,7 @@ def main(args, server_args):
             "speed": speed,
             "completion_tokens": completion_tokens,
         }
+        ic(record)
 
         with open(args.output, "a") as fout:
             fout.write(json.dumps(record) + "\n")
@@ -292,7 +297,7 @@ if __name__ == "__main__":
         default=(0, 1, 2, 4, 8),
     )
     parser.add_argument(
-        "--num_draft_tokens",
+        "--num-draft-tokens",
         type=int,
         nargs="+",
         default=(0, 2, 4, 8, 16, 32),  # use (0, 2, 4, 8) for large batch size
