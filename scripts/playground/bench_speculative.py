@@ -31,6 +31,8 @@ from sglang.test.test_utils import (
     popen_launch_server,
 )
 
+from icecream import install
+install()
 
 def node0_print(msg):
     if server_args.node_rank == 0:
@@ -69,11 +71,9 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
         padded_prompts = (prompts * ((num_prompts + len(prompts) - 1) // len(prompts)))[
             :num_prompts
         ]
-        ic(padded_prompts)
         input_requests: List[DatasetRow] = [
             DatasetRow(p, 0, 512) for p in padded_prompts
         ]
-        ic(input_requests)
         backend = "sglang"
         api_url = f"{base_url}/generate"
 
@@ -194,6 +194,22 @@ def main(args, server_args):
                 server_args.dtype,
             ]
         )
+
+        if server_args.disable_cuda_graph:
+            other_args.extend(
+                [
+                    "--disable-cuda-graph",
+                ]
+            )
+
+        if server_args.context_length:
+            other_args.extend(
+                [
+                    "--context-length",
+                    server_args.context_length,
+                ]
+            )
+
 
         if server_args.trust_remote_code:
             other_args.extend(
