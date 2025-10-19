@@ -1222,6 +1222,9 @@ def sample_mt_bench_requests(
         for line in f:
             dataset.append(json.loads(line))
 
+    if num_requests < 0:
+        num_requests = len(dataset) + num_requests + 1
+
     # Filter out sequences that are too long or too short
     filtered_dataset: List[DatasetRow] = []
     for i in range(len(dataset)):
