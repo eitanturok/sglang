@@ -264,7 +264,6 @@ def throughput_test_once(
         gen_out = json.loads(gen_out)
 
     server_info = backend.get_server_info()
-    ic(server_info)
 
     measurement_results["total_latency"] = latency
     measurement_results["total_output_tokens"] = sum(
@@ -291,8 +290,9 @@ def throughput_test_once(
         "last_gen_throughput"
     ]
 
-    measurement_results["avg_spec_accept_length"] = server_info[
-        "internal_states"][0]["avg_spec_accept_length"]
+    if "avg_spec_accept_length" in server_info["internal_states"][0]:
+        measurement_results["avg_spec_accept_length"] = server_info[
+            "internal_states"][0]["avg_spec_accept_length"]
 
     return measurement_results
 
