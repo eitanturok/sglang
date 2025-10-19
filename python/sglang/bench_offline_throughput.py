@@ -34,6 +34,9 @@ from sglang.lang.backend.runtime_endpoint import Runtime
 from sglang.srt.entrypoints.engine import Engine
 from sglang.srt.server_args import ServerArgs
 
+from icecream import install
+install()
+
 
 @dataclasses.dataclass
 class BenchArgs:
@@ -44,6 +47,8 @@ class BenchArgs:
     num_prompts: int = 1000
     sharegpt_output_len: Optional[int] = None
     sharegpt_context_len: Optional[int] = None
+    mt_bench_output_len: Optional[int] = None
+    mt_bench_context_len: Optional[int] = None
     random_input_len: int = 1024
     random_output_len: int = 1024
     random_range_ratio: float = 0.0
@@ -71,7 +76,7 @@ class BenchArgs:
             "--dataset-name",
             type=str,
             default="sharegpt",
-            choices=["sharegpt", "random", "generated-shared-prefix"],
+            choices=["sharegpt", "random", "generated-shared-prefix", "mt-bench"],
             help="Name of the dataset to benchmark on.",
         )
         parser.add_argument(
@@ -94,6 +99,18 @@ class BenchArgs:
             type=int,
             default=BenchArgs.sharegpt_context_len,
             help="The context length of the model for the ShareGPT dataset. Requests longer than the context length will be dropped.",
+        )
+        parser.add_argument(
+            "--mt-bench-output-len",
+            type=int,
+            default=BenchArgs.mt_bench_output_len,
+            help="Target length in tokens for outputs in mt-bench dataset",
+        )
+        parser.add_argument(
+            "--mt-bench-context-len",
+            type=int,
+            default=BenchArgs.mt_bench_context_len,
+            help="The context length of the model for the mt-bench dataset. Requests longer than the context length will be dropped.",
         )
         parser.add_argument(
             "--random-input-len",
@@ -212,6 +229,7 @@ def throughput_test_once(
         "input_throughput": -1,
         "output_throughput": -1,
         "total_throughput": -1,
+        "avg_spec_accept_length": 1.0,
     }
 
     prompt = [r.prompt for r in reqs]
@@ -246,6 +264,7 @@ def throughput_test_once(
         gen_out = json.loads(gen_out)
 
     server_info = backend.get_server_info()
+    ic(server_info)
 
     measurement_results["total_latency"] = latency
     measurement_results["total_output_tokens"] = sum(
@@ -271,6 +290,9 @@ def throughput_test_once(
     measurement_results["last_gen_throughput"] = server_info["internal_states"][0][
         "last_gen_throughput"
     ]
+
+    measurement_results["avg_spec_accept_length"] = server_info[
+        "internal_states"][0]["avg_spec_accept_length"]
 
     return measurement_results
 
@@ -370,6 +392,7 @@ def throughput_test(
     backend.shutdown()
 
     if bench_args.result_filename:
+        logging.info(f'Saving results to {bench_args.result_filename}')
         with open(bench_args.result_filename, "a") as fout:
             fout.write(json.dumps(result) + "\n")
 
@@ -408,6 +431,13 @@ def throughput_test(
             "Total token throughput (tok/s):", result["total_throughput"]
         )
     )
+    if server_args.speculative_algorithm:
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Average Acceptance Length:", result["avg_spec_accept_length"]
+            )
+        )
+
     print("=" * 50)
 
     return result

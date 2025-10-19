@@ -738,6 +738,17 @@ def get_dataset(args, tokenizer, model_id=None):
             prompt_suffix=args.prompt_suffix,
             apply_chat_template=args.apply_chat_template,
         )
+    elif args.dataset_name == "mt-bench":
+        assert not tokenize_prompt
+        input_requests = sample_mt_bench_requests(
+            dataset_path=args.dataset_path,
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            fixed_output_len=args.mt_bench_output_len,
+            context_len=args.mt_bench_context_len,
+            prompt_suffix=args.prompt_suffix,
+            apply_chat_template=args.apply_chat_template,
+        )
     elif args.dataset_name.startswith("random"):
         input_requests = sample_random_requests(
             input_len=args.random_input_len,
@@ -855,6 +866,7 @@ class BenchmarkMetrics:
 
 
 SHAREGPT_URL = "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
+MT_BENCH_URL = "https://huggingface.co/datasets/philschmid/mt-bench/resolve/main/question.jsonl"
 MOONCAKE_DATASET_URL = {
     "mooncake": "https://raw.githubusercontent.com/kvcache-ai/Mooncake/main/FAST25-release/arxiv-trace/mooncake_trace.jsonl",
     "conversation": "https://raw.githubusercontent.com/kvcache-ai/Mooncake/main/FAST25-release/traces/conversation_trace.jsonl",
@@ -1170,6 +1182,76 @@ def sample_sharegpt_requests(
         if prompt_len < 2 or output_len < 2:
             # Prune too short sequences.
             continue
+
+        if context_len and prompt_len + output_len > context_len:
+            # Prune too long sequences.
+            continue
+
+        filtered_dataset.append(
+            DatasetRow(
+                prompt=prompt,
+                prompt_len=prompt_len,
+                output_len=output_len,
+            )
+        )
+
+    print(f"#Input tokens: {np.sum([x.prompt_len for x in filtered_dataset])}")
+    print(f"#Output tokens: {np.sum([x.output_len for x in filtered_dataset])}")
+    return filtered_dataset
+
+
+def sample_mt_bench_requests(
+    dataset_path: str,
+    num_requests: int,
+    tokenizer: PreTrainedTokenizerBase,
+    fixed_output_len: Optional[int] = None,
+    context_len: Optional[int] = None,
+    prompt_suffix: Optional[str] = "",
+    apply_chat_template=False,
+) -> List[DatasetRow]:
+    if fixed_output_len is not None and fixed_output_len < 4:
+        raise ValueError("output_len too small")
+
+    # Download sharegpt if necessary
+    if not is_file_valid_json(dataset_path) and dataset_path == "":
+        dataset_path = download_and_cache_file(MT_BENCH_URL)
+
+    # Load the dataset.
+    dataset = []
+    with open(dataset_path) as f:
+        for line in f:
+            dataset.append(json.loads(line))
+
+    # Filter out sequences that are too long or too short
+    filtered_dataset: List[DatasetRow] = []
+    for i in range(len(dataset)):
+        if len(filtered_dataset) == num_requests:
+            break
+
+        # Tokenize the prompts and completions.
+        prompt = dataset[i]["turns"][0] # use turn 0; drop turn 1
+        if prompt_suffix:
+            prompt = (
+                remove_suffix(prompt, ASSISTANT_SUFFIX)
+                + prompt_suffix
+                + ASSISTANT_SUFFIX
+            )
+        print(prompt)
+
+        if apply_chat_template:
+            prompt = tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                add_generation_prompt=True,
+                tokenize=False,
+            )
+            if tokenizer.bos_token:
+                prompt = prompt.replace(tokenizer.bos_token, "")
+        print(prompt)
+
+        prompt_token_ids = tokenizer.encode(prompt)
+        prompt_len = len(prompt_token_ids)
+
+        output_len = fixed_output_len if fixed_output_len is not None else 1024  # Default
 
         if context_len and prompt_len + output_len > context_len:
             # Prune too long sequences.
