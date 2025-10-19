@@ -80,7 +80,7 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
         #     DatasetRow(p, 0, 512) for p in padded_prompts
         # ]
 
-        ic(input_requests)
+        # ic(input_requests)
         backend = "sglang"
         api_url = f"{base_url}/generate"
 
@@ -185,6 +185,13 @@ def main(args, server_args):
                         server_args.speculative_draft_model_path,
                         "--speculative-algorithm",
                         server_args.speculative_algorithm,
+                    ]
+                )
+            if server_args.speculative_token_map is not None:
+                other_args.extend(
+                    [
+                        "--speculative-token-map",
+                        server_args.speculative_token_map,
                     ]
                 )
 
