@@ -22,8 +22,10 @@ from sglang.bench_serving import (
     DatasetRow,
     benchmark,
     sample_mmmu_requests,
+    sample_mt_bench_requests,
     set_global_args,
 )
+
 from sglang.srt.server_args import ServerArgs
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
@@ -68,12 +70,17 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
         backend = "sglang-oai-chat"
         api_url = f"{base_url}/v1/chat/completions"
     else:
-        padded_prompts = (prompts * ((num_prompts + len(prompts) - 1) // len(prompts)))[
-            :num_prompts
-        ]
-        input_requests: List[DatasetRow] = [
-            DatasetRow(p, 0, 512) for p in padded_prompts
-        ]
+        # use mt-bench dataset
+        input_requests = sample_mt_bench_requests("", num_prompts, tokenizer, 1024)
+
+        # padded_prompts = (prompts * ((num_prompts + len(prompts) - 1) // len(prompts)))[
+        #     :num_prompts
+        # ]
+        # input_requests: List[DatasetRow] = [
+        #     DatasetRow(p, 0, 512) for p in padded_prompts
+        # ]
+
+        ic(input_requests)
         backend = "sglang"
         api_url = f"{base_url}/generate"
 
@@ -112,6 +119,7 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
             profile=None,
         )
     )
+    # ic(results)
 
     assert results["completed"] == len(input_requests)
     acc_length = results["accept_length"] or 1.0
