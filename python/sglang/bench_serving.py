@@ -1236,7 +1236,6 @@ def sample_mt_bench_requests(
                 + prompt_suffix
                 + ASSISTANT_SUFFIX
             )
-        print(prompt)
 
         if apply_chat_template:
             prompt = tokenizer.apply_chat_template(
@@ -1251,7 +1250,7 @@ def sample_mt_bench_requests(
         prompt_token_ids = tokenizer.encode(prompt)
         prompt_len = len(prompt_token_ids)
 
-        output_len = fixed_output_len if fixed_output_len is not None else 1024  # Default
+        output_len = fixed_output_len if fixed_output_len is not None else 1024  # Default to 1024
 
         if context_len and prompt_len + output_len > context_len:
             # Prune too long sequences.
