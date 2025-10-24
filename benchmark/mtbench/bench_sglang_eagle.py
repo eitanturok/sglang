@@ -18,7 +18,8 @@ from sglang.test.test_utils import (
     add_common_sglang_args_and_parse,
     select_sglang_backend,
 )
-
+from icecream import install
+install()
 
 def load_questions(filename):
     questions = []
@@ -72,7 +73,7 @@ def main(args):
     rets = answer_mt_bench.run_batch(
         arguments,
         temperature=0,
-        max_new_tokens=2048,
+        max_new_tokens=1024,
         num_threads=args.parallel,
         progress_bar=True,
     )
@@ -103,7 +104,7 @@ def main(args):
         accept_length = 1.0
 
     print(
-        f"#questions: {len(questions)}, Throughput: {output_throughput:.2f} token/s, Acceptance length: {accept_length:.2f}"
+        f"Num Questions: {len(questions)}, Total Time: {latency:.2f} sec, Output Throughput: {output_throughput:.2f} token/sec, Acceptance length: {accept_length:.2f}"
     )
 
     # Write results

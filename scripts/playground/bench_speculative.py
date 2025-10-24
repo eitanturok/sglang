@@ -57,32 +57,26 @@ class FakeTokenizer:
     def encode(self, text: str, add_special_tokens: bool = False):
         return []
 
+def load_questions(filename):
+    questions = []
+    with open(filename, "r") as fin:
+        for line in fin:
+            obj = json.loads(line)
+            questions.append(obj)
+    return questions
+
 
 def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
     # format: (prompt, input_len, output len). We set input_len as a dummy value 0.
-    if is_multimodal:
-        input_requests = sample_mmmu_requests(
-            num_prompts,
-            tokenizer,
-            512,
-            apply_chat_template=False,
-        )
-        backend = "sglang-oai-chat"
-        api_url = f"{base_url}/v1/chat/completions"
-    else:
-        # use mt-bench dataset
-        input_requests = sample_mt_bench_requests("", num_prompts, tokenizer, 1024)
 
-        # padded_prompts = (prompts * ((num_prompts + len(prompts) - 1) // len(prompts)))[
-        #     :num_prompts
-        # ]
-        # input_requests: List[DatasetRow] = [
-        #     DatasetRow(p, 0, 512) for p in padded_prompts
-        # ]
+    # Load dataset
+    questions = load_questions(args.question_file)[: args.num_questions]
+    arguments = [
+        {"question_1": q["turns"][0], "question_2": q["turns"][1]} for q in questions
+    ]
 
-        # ic(input_requests)
-        backend = "sglang"
-        api_url = f"{base_url}/generate"
+    backend = "sglang"
+    api_url = f"{base_url}/generate"
 
     # We need to set some dummy values in order to call `benchmark` below.
     args = SimpleNamespace(
@@ -119,7 +113,6 @@ def send_one_batch(base_url, num_prompts, batch_size, tokenizer, is_multimodal):
             profile=None,
         )
     )
-    # ic(results)
 
     assert results["completed"] == len(input_requests)
     acc_length = results["accept_length"] or 1.0
