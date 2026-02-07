@@ -43,6 +43,7 @@ from sglang.multimodal_gen.runtime.layers.visual_embedding import (
     PatchEmbed,
     TimestepEmbedder,
 )
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
 from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
 from sglang.multimodal_gen.runtime.models.dits.base import CachableDiT
 from sglang.multimodal_gen.runtime.platforms import (
@@ -669,7 +670,7 @@ class WanTransformerBlock_VSA(nn.Module):
         return hidden_states
 
 
-class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
+class WanTransformer3DModel(MagCacheMixin, CachableDiT, OffloadableDiTMixin):
     _fsdp_shard_conditions = WanVideoConfig()._fsdp_shard_conditions
     _compile_conditions = WanVideoConfig()._compile_conditions
     _supported_attention_backends = WanVideoConfig()._supported_attention_backends
@@ -753,6 +754,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         self.cnt = 0
         self.__post_init__()
+        # Initialize MagCache state (in addition to TeaCache from CachableDiT)
+        self._init_magcache_state()
 
         # misc
         self.sp_size = get_sp_world_size()
@@ -861,6 +864,30 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         assert encoder_hidden_states.dtype == orig_dtype
 
         # 4. Transformer blocks
+        # Check for MagCache first (higher priority than TeaCache)
+        # Follow TeaCache pattern: check enable_magcache flag
+        if self.enable_magcache:
+            magcache_ctx = self._get_magcache_context()
+            if magcache_ctx is None:
+                raise ValueError(
+                    "enable_magcache=True but magcache_params not provided. "
+                    "You must either:\n"
+                    "  1. Run calibration first to generate magnitude ratios, OR\n"
+                    "  2. Provide magcache_params with a calibration_file path.\n"
+                    "See MAGCACHE_USAGE.md for details."
+                )
+
+            # Log MagCache activity
+            if magcache_ctx.is_calibration and self.cnt == 0:
+                logger.info("🔧 MagCache: Calibration mode - collecting residuals")
+            elif not magcache_ctx.is_calibration and self.cnt == 0:
+                logger.info(f"⚡ MagCache: Active (threshold={magcache_ctx.skip_threshold}, "
+                           f"steps={magcache_ctx.num_inference_steps})")
+        else:
+            magcache_ctx = None
+
+        teacache_enabled = self.enable_teacache and magcache_ctx is None
+
         # if caching is enabled, we might be able to skip the forward pass
         should_skip_forward = self.should_skip_forward_for_cached_states(
             timestep_proj=timestep_proj, temb=temb
@@ -869,17 +896,22 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         if should_skip_forward:
             hidden_states = self.retrieve_cached_states(hidden_states)
         else:
-            # if teacache is enabled, we need to cache the original hidden states
-            if self.enable_teacache:
+            # if caching is enabled, we need to cache the original hidden states
+            if teacache_enabled or (magcache_ctx is not None):
                 original_hidden_states = hidden_states.clone()
 
             for block in self.blocks:
                 hidden_states = block(
                     hidden_states, encoder_hidden_states, timestep_proj, freqs_cis
                 )
-            # if teacache is enabled, we need to cache the original hidden states
-            if self.enable_teacache:
+
+            # Cache states after forward pass
+            if teacache_enabled:
                 self.maybe_cache_states(hidden_states, original_hidden_states)
+            elif magcache_ctx is not None:
+                # MagCache: cache residual for both calibration and inference
+                MagCacheMixin.maybe_cache_states(self, hidden_states, original_hidden_states)
+
         self.cnt += 1
         # 5. Output norm, projection & unpatchify
         if temb.dim() == 3:
@@ -922,6 +954,29 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             self.previous_residual_negative = residual
 
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
+        # Check MagCache first (higher priority)
+        magcache_ctx = self._get_magcache_context()
+        if magcache_ctx is not None:
+            # During calibration, never skip
+            if magcache_ctx.is_calibration:
+                return False
+
+            # During inference, use magnitude ratio-based skip decision
+            should_skip = self._should_skip_using_magnitude_ratio(
+                current_timestep=magcache_ctx.current_timestep,
+                magnitude_ratios=magcache_ctx.magnitude_ratios,
+                skip_threshold=magcache_ctx.skip_threshold,
+            )
+
+            if should_skip:
+                logger.debug(
+                    f"MagCache: Skipping step {magcache_ctx.current_timestep} "
+                    f"(ratio={magcache_ctx.magnitude_ratios[magcache_ctx.current_timestep]:.4f} "
+                    f"< {magcache_ctx.skip_threshold})"
+                )
+            return should_skip
+
+        # Fall back to TeaCache if MagCache not enabled
         if not self.enable_teacache:
             return False
         ctx = self._get_teacache_context()

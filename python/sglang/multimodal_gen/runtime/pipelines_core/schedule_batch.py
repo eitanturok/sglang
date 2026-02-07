@@ -19,6 +19,7 @@ from typing import Any, Optional
 import PIL.Image
 import torch
 
+from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
 from sglang.multimodal_gen.configs.sample.sampling_params import SamplingParams
 from sglang.multimodal_gen.configs.sample.teacache import (
     TeaCacheParams,
@@ -100,7 +101,6 @@ class Req:
     raw_audio_latent_shape: tuple[int, ...] | None = None
 
     # Audio Parameters
-    fps: float = 24.0
     generate_audio: bool = True
 
     raw_latent_shape: torch.Tensor | None = None
@@ -142,6 +142,9 @@ class Req:
 
     # TeaCache parameters
     teacache_params: TeaCacheParams | WanTeaCacheParams | None = None
+
+    # MagCache parameters
+    magcache_params: "MagCacheParams | None" = None
 
     # STA parameters
     STA_param: list | None = None
@@ -295,6 +298,7 @@ class Req:
                        width: {target_width}
                       height: {target_height}
                   num_frames: {self.num_frames}
+                         fps: {self.fps}
                       prompt: {self.prompt}
                   neg_prompt: {self.negative_prompt}
                         seed: {self.seed}
@@ -325,6 +329,7 @@ class OutputBatch:
     trajectory_latents: torch.Tensor | None = None
     trajectory_decoded: list[torch.Tensor] | None = None
     error: str | None = None
+    output_file_paths: list[str] | None = None
 
     # logged timings info, directly from Req.timings
     timings: Optional["RequestTimings"] = None

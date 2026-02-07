@@ -14,6 +14,11 @@ from sglang.multimodal_gen.configs.models import DiTConfig
 # For backwards compatibility, re-export from the new location
 from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext  # noqa: F401
 from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheMixin
+
+# MagCache support
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext  # noqa: F401
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
+
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 
 
@@ -107,3 +112,33 @@ class CachableDiT(TeaCacheMixin, BaseDiT):
     def __init__(self, config: DiTConfig, **kwargs) -> None:
         super().__init__(config, **kwargs)
         self._init_teacache_state()
+
+
+class MagCacheDiT(MagCacheMixin, BaseDiT):
+    """
+    An intermediate base class that adds MagCache optimization functionality to DiT models.
+
+    Inherits MagCacheMixin for magnitude-based cache logic and BaseDiT for core DiT functionality.
+
+    MagCache accelerates inference by using pre-computed magnitude ratios to decide when
+    to skip computation and reuse cached residuals. Unlike TeaCache which computes L1
+    distances on-the-fly, MagCache relies on a one-time calibration phase.
+    """
+
+    # These are required class attributes that should be overridden by concrete implementations
+    _fsdp_shard_conditions = []
+    param_names_mapping = {}
+    reverse_param_names_mapping = {}
+    lora_param_names_mapping: dict = {}
+    # Ensure these instance attributes are properly defined in subclasses
+    hidden_size: int
+    num_attention_heads: int
+    num_channels_latents: int
+    # always supports torch_sdpa
+    _supported_attention_backends: set[AttentionBackendEnum] = (
+        DiTConfig()._supported_attention_backends
+    )
+
+    def __init__(self, config: DiTConfig, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self._init_magcache_state()
