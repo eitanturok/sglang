@@ -118,6 +118,7 @@ async def generations(
         negative_prompt=request.negative_prompt,
         enable_teacache=request.enable_teacache,
         enable_magcache=request.enable_magcache,
+        calibrate_cache=request.calibrate_cache,
         output_compression=request.output_compression,
         output_quality=request.output_quality,
     )
@@ -190,6 +191,7 @@ async def edits(
     output_compression: Optional[int] = Form(None),
     enable_teacache: Optional[bool] = Form(False),
     enable_magcache: Optional[bool] = Form(False),
+    calibrate_cache: Optional[bool] = Form(False),
     num_frames: int = Form(1),
 ):
     request_id = generate_request_id()
@@ -237,6 +239,7 @@ async def edits(
         num_inference_steps=num_inference_steps,
         enable_teacache=enable_teacache,
         enable_magcache=enable_magcache,
+        calibrate_cache=calibrate_cache,
         num_frames=num_frames,
         output_compression=output_compression,
         output_quality=output_quality,

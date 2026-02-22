@@ -70,6 +70,7 @@ def _build_video_sampling_params(request_id: str, request: VideoGenerationsReque
         negative_prompt=request.negative_prompt,
         enable_teacache=request.enable_teacache,
         enable_magcache=request.enable_magcache,
+        calibrate_cache=request.calibrate_cache,
         output_path=request.output_path,
         output_compression=request.output_compression,
         output_quality=request.output_quality,
@@ -161,6 +162,7 @@ async def create_video(
     num_inference_steps: Optional[int] = Form(None),
     enable_teacache: Optional[bool] = Form(False),
     enable_magcache: Optional[bool] = Form(False),
+    calibrate_cache: Optional[bool] = Form(False),
     output_quality: Optional[str] = Form("default"),
     output_compression: Optional[int] = Form(None),
     extra_body: Optional[str] = Form(None),
@@ -215,6 +217,7 @@ async def create_video(
             num_inference_steps=num_inference_steps,
             enable_teacache=enable_teacache,
             enable_magcache=enable_magcache,
+            calibrate_cache=calibrate_cache,
             output_compression=output_compression,
             output_quality=output_quality,
             **(

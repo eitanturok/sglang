@@ -140,6 +140,7 @@ class SamplingParams:
     teacache_params: "TeaCacheParams | None" = None
     enable_magcache: bool = False
     magcache_params: "MagCacheParams | None" = None
+    calibrate_cache: bool = False
 
     # Profiling
     profile: bool = False

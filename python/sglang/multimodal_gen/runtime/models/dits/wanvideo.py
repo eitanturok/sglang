@@ -815,6 +815,10 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         guidance=None,
         **kwargs,
     ) -> torch.Tensor:
+
+        if self.cache_type is None:
+            self.init_cache()
+
         forward_batch = get_forward_context().forward_batch
         if forward_batch is not None:
             sequence_shard_enabled = (
@@ -822,13 +826,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             )
         else:
             sequence_shard_enabled = False
-        self.enable_teacache = (
-            forward_batch is not None and forward_batch.enable_teacache
-        )
-        self.enable_magcache = (
-            forward_batch is not None and forward_batch.enable_magcache
-        )
-        self.is_cfg_negative=forward_batch.is_cfg_negative
 
         orig_dtype = hidden_states.dtype
         if not isinstance(encoder_hidden_states, torch.Tensor):
@@ -941,22 +938,25 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         should_skip_forward = self.should_skip_forward_for_cached_states(
             timestep_proj=timestep_proj, temb=temb
         )
-        should_skip_forward = False
 
         if should_skip_forward:
             hidden_states = self.retrieve_cached_states(hidden_states)
         else:
-            # If any cache is enabled, we need to cache the original hidden states
-            if self.cache_type is not None:
+            # If caching is enabled, save the original hidden states
+            if self.cache_type:
                 original_hidden_states = hidden_states.clone()
 
             for block in self.blocks:
                 hidden_states = block(
                     hidden_states, encoder_hidden_states, timestep_proj, freqs_cis
                 )
-            # Cache states
-            if self.cache_type is not None:
-                self.calibrate(hidden_states=hidden_states, original_hidden_states=original_hidden_states)
+
+            # calibrate cache
+            if self.calibrate_cache:
+                ctx = self._get_context(calibration_mode=True)
+                self.do_calibrate_cache(ctx, hidden_states, original_hidden_states)
+            # cache states for possible future reuse
+            elif self.cache_type is not None:
                 self.maybe_cache_states(hidden_states, original_hidden_states)
 
         self.cnt += 1 # todo: use this cnt in calibrate, maybe_skip_forward_for_cached_states
@@ -997,71 +997,56 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         return output
 
-    def maybe_cache_states(
-        self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor
-    ) -> None:
-        """Cache residual with CFG positive/negative separation."""
-        ic("caching states")
-        residual = hidden_states.squeeze(0) - original_hidden_states
-        if not self.is_cfg_negative:
-            self.previous_residual = residual
-        else:
-            self.previous_residual_negative = residual
-
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         """Check both TeaCache and MagCache (route between strategies)."""
 
-        if self.enable_magcache and self.enable_teacache:
-            raise ValueError("Both MagCache and TeaCache cannot be enabled at the same time")
-        self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else None
+        # when calibrating cache, cannot skip forward pass
+        if self.calibrate_cache:
+            return False
 
-        if self.enable_magcache:
-            ctx = self._get_magcache_context()
-            if ctx is None:
-                return False
+        # if context is not available, cannot make decision to skip forward pass
+        ctx = self._get_context()
+        if ctx is None:
+            return False
+
+        if self.cache_type == 'magcache':
             return self.should_skip_forward(ctx.current_timestep, ctx.cnt, ctx.do_cfg, ctx.is_cfg_negative)
+        elif self.cache_type == 'teacache':
+            # Wan uses WanTeaCacheParams with additional fields
+            teacache_params = ctx.teacache_params
+            assert isinstance(
+                teacache_params, WanTeaCacheParams
+            ), "teacache_params is not a WanTeaCacheParams"
 
-        # Try TeaCache
-        if self.enable_teacache:
-            ctx = self._get_teacache_context()
-            if ctx is None:
-                ic('teacache ctx is None')
-            else:
-                # Wan uses WanTeaCacheParams with additional fields
-                teacache_params = ctx.teacache_params
-                assert isinstance(
-                    teacache_params, WanTeaCacheParams
-                ), "teacache_params is not a WanTeaCacheParams"
+            # Initialize Wan-specific parameters
+            use_ret_steps = teacache_params.use_ret_steps
+            cutoff_steps = teacache_params.get_cutoff_steps(ctx.num_inference_steps)
+            ret_steps = teacache_params.ret_steps
 
-                # Initialize Wan-specific parameters
-                use_ret_steps = teacache_params.use_ret_steps
-                cutoff_steps = teacache_params.get_cutoff_steps(ctx.num_inference_steps)
-                ret_steps = teacache_params.ret_steps
+            # Adjust ret_steps and cutoff_steps for non-CFG mode
+            if not ctx.do_cfg:
+                ret_steps = ret_steps // 2
+                cutoff_steps = cutoff_steps // 2
 
-                # Adjust ret_steps and cutoff_steps for non-CFG mode
-                if not ctx.do_cfg:
-                    ret_steps = ret_steps // 2
-                    cutoff_steps = cutoff_steps // 2
+            timestep_proj = kwargs["timestep_proj"]
+            temb = kwargs["temb"]
+            modulated_inp = timestep_proj if use_ret_steps else temb
 
-                timestep_proj = kwargs["timestep_proj"]
-                temb = kwargs["temb"]
-                modulated_inp = timestep_proj if use_ret_steps else temb
+            self.is_cfg_negative = ctx.is_cfg_negative
 
-                self.is_cfg_negative = ctx.is_cfg_negative
+            # Wan uses ret_steps/cutoff_steps for boundary detection
+            is_boundary_step = self.cnt < ret_steps or self.cnt >= cutoff_steps
 
-                # Wan uses ret_steps/cutoff_steps for boundary detection
-                is_boundary_step = self.cnt < ret_steps or self.cnt >= cutoff_steps
+            # Use shared helper to compute cache decision
+            should_calc = self._compute_teacache_decision(
+                modulated_inp=modulated_inp,
+                is_boundary_step=is_boundary_step,
+                coefficients=ctx.coefficients,
+                teacache_thresh=ctx.teacache_thresh,
+            )
+            ic(self.cnt, is_boundary_step, should_calc)
 
-                # Use shared helper to compute cache decision
-                should_calc = self._compute_teacache_decision(
-                    modulated_inp=modulated_inp,
-                    is_boundary_step=is_boundary_step,
-                    coefficients=ctx.coefficients,
-                    teacache_thresh=ctx.teacache_thresh,
-                )
-                ic(self.cnt, is_boundary_step, should_calc)
-
-                return not should_calc
+            return not should_calc
 
         return False
 
@@ -1069,7 +1054,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         if self.enable_magcache:
             ctx = self._get_magcache_context()
             assert ctx is not None, "MagCache context should not be None when calibrating MagCache"
-            self.calibrate_magcache(ctx, **kwargs)
+            self.calibrate_cache(ctx, **kwargs)
         if self.enable_teacache:
             self.calibrate_teacache(**kwargs)
 

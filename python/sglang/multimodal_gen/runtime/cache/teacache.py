@@ -312,3 +312,7 @@ class TeaCacheMixin:
     def retrieve_cached_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Retrieve cached states. Must be implemented by subclass."""
         raise NotImplementedError("retrieve_cached_states is not implemented")
+
+    def calibrate_teacache(self, ctx: TeaCacheContext, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor) -> None:
+        """Calibrate TeaCache by logging L1 distance metrics. Override if needed."""
+        pass

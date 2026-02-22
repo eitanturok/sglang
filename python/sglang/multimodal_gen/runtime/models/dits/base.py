@@ -105,10 +105,37 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
     _supported_attention_backends: set[AttentionBackendEnum] = (
         DiTConfig()._supported_attention_backends
     )
-    cache_type: str|None
+    cache_type: str|bool|None = None
 
     def __init__(self, config: DiTConfig, **kwargs) -> None:
         super().__init__(config, **kwargs)
+
+    def init_cache(self):
+        """
+        Initialize cache state.
+        This should be called at the beginning of the forward pass because it depends on the forward batch context.
+        """
+        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
+        forward_context = get_forward_context()
+        forward_batch = forward_context.forward_batch
+        if forward_batch is None:
+            return None
+
+        self.calibrate_cache = forward_batch.calibrate_cache
+        self.is_cfg_negative = forward_batch.is_cfg_negative
+
+        self.enable_teacache = forward_batch.enable_teacache
+        self.enable_magcache = forward_batch.enable_magcache
+        if self.enable_magcache and self.enable_teacache:
+            raise ValueError("Both MagCache and TeaCache cannot be enabled at the same time")
+        self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else False
+
+        if self.cache_type == 'magcache':
+            self._get_context = self._get_magcache_context
+            self.do_calibrate_cache = self.calibrate_magcache
+        elif self.cache_type == 'teacache':
+            self._get_context = self._get_teacache_context
+            self.do_calibrate_cache = self.calibrate_teacache
 
     def maybe_cache_states(
         self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor
@@ -132,7 +159,6 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         """Override in subclass to implement cache decision logic."""
         return False
-        self._init_teacache_state()
 
     @classmethod
     def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:

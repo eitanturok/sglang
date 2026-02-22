@@ -47,6 +47,7 @@ class ImageGenerationsRequest(BaseModel):
     output_compression: Optional[int] = None
     enable_teacache: Optional[bool] = False
     enable_magcache: Optional[bool] = False
+    calibrate_cache: Optional[bool] = False
     diffusers_kwargs: Optional[Dict[str, Any]] = None  # kwargs for diffusers backend
 
 
@@ -92,6 +93,7 @@ class VideoGenerationsRequest(BaseModel):
     negative_prompt: Optional[str] = None
     enable_teacache: Optional[bool] = False
     enable_magcache: Optional[bool] = False
+    calibrate_cache: Optional[bool] = False
     output_quality: Optional[str] = "default"
     output_compression: Optional[int] = None
     output_path: Optional[str] = None

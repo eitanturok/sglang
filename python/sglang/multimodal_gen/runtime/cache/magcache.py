@@ -132,7 +132,7 @@ class MagCacheMixin:
 
     def calibrate_magcache(self, ctx, hidden_states, original_hidden_states):
 
-        # create file for magcache calibration results
+        # create directory for magcache calibration results
         if self.calibration_path is None:
             from sglang.multimodal_gen.envs import SGLANG_DIFFUSION_CACHE_ROOT
             from sglang.multimodal_gen.runtime.server_args import get_global_server_args
@@ -167,7 +167,7 @@ class MagCacheMixin:
         do_cfg=forward_batch.do_classifier_free_guidance
         is_cfg_negative=forward_batch.is_cfg_negative
         magcache_params=getattr(forward_batch.sampling_params, "magcache_params", None)
-        assert magcache_params is not None, "MagCache parameters not found in sampling_params."
+        assert magcache_params is not None, "MagCache parameters not found in sampling_params." # todo: what about calibration
 
         # init cache at the start of each generation
         if current_timestep == 0:
