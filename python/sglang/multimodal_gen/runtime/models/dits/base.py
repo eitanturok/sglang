@@ -132,3 +132,18 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         """Override in subclass to implement cache decision logic."""
         return False
+        self._init_teacache_state()
+
+    @classmethod
+    def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:
+        """
+        Get quantization rules for Nunchaku quantization.
+
+        Returns a dict mapping layer name patterns to quantization configs:
+        {
+            "skip": [list of patterns to skip quantization],
+            "svdq_w4a4": [list of patterns for SVDQ W4A4],
+            "awq_w4a16": [list of patterns for AWQ W4A16],
+        }
+        """
+        return {}
