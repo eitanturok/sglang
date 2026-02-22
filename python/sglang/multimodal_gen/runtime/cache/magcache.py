@@ -70,11 +70,6 @@ class MagCacheMixin:
         self.min_steps = int(self.num_steps * self.retention_ratio) * 2 if self.use_ret_steps else 2
         self.max_steps = self.num_steps * 2 if self.use_ret_steps else self.num_steps * 2 - 2
 
-        # save calibrated magnitude ratios
-        timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.calibration_path = f"cache/magcache_calibration_{timestamp}.jsonl"
-        os.makedirs(os.path.dirname(self.calibration_path), exist_ok=True)
-
         # track previous residual separately for positive and negative branches in CFG
         if not is_cfg_negative:
             self.previous_residual: torch.Tensor | None = None
@@ -82,6 +77,8 @@ class MagCacheMixin:
         else:
             self.previous_residual_negative: torch.Tensor | None = None
             self.previous_residual_norm_negative: float = 0.0
+
+        self.calibration_path = None
 
         # track magnitude ratio and accumulated error for skip decision
         self.reset(is_cfg_negative)
@@ -109,7 +106,6 @@ class MagCacheMixin:
         # always compute first few and last few steps
         is_boundary_step = cnt < self.min_steps or cnt >= self.max_steps
         if is_boundary_step:
-            ic(f"Boundary step (cnt={cnt}), computing without cache. Resetting MagCache state.")
             self.reset(is_cfg_negative)
             return False
 
@@ -135,6 +131,15 @@ class MagCacheMixin:
             return False
 
     def calibrate_magcache(self, ctx, hidden_states, original_hidden_states):
+
+        # create file for magcache calibration results
+        if self.calibration_path is None:
+            from sglang.multimodal_gen.envs import SGLANG_DIFFUSION_CACHE_ROOT
+            from sglang.multimodal_gen.runtime.server_args import get_global_server_args
+            cache_dir = os.path.join(SGLANG_DIFFUSION_CACHE_ROOT, "magcache_calibration")
+            os.makedirs(cache_dir, exist_ok=True)
+            model_name = get_global_server_args().model_path.replace("/", "--")
+            self.calibration_path = os.path.join(cache_dir, f"{model_name}.jsonl")
 
         prev_residual = self.previous_residual_negative if ctx.is_cfg_negative else self.previous_residual
         if prev_residual is None:
