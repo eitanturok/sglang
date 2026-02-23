@@ -58,7 +58,7 @@ class MagCacheMixin:
     _CFG_SUPPORTED_PREFIXES: set[str] = {"wan", "hunyuan", "zimage"}
     config: DiTConfig
 
-    def init(self, is_cfg_negative:bool, magcache_params:"MagCacheParams") -> None:
+    def _init_magcache(self, is_cfg_negative:bool, magcache_params:"MagCacheParams") -> None:
 
         self.num_steps = magcache_params.num_steps # todo: don't hardcode
         self.retention_ratio = magcache_params.retention_ratio
@@ -70,10 +70,11 @@ class MagCacheMixin:
         self.min_steps = int(self.num_steps * self.retention_ratio) * 2 if self.use_ret_steps else 2
         self.max_steps = self.num_steps * 2 if self.use_ret_steps else self.num_steps * 2 - 2
 
-        # track previous residual separately for positive and negative branches in CFG
-        if not is_cfg_negative:
-            self.previous_residual: torch.Tensor | None = None
-            self.previous_residual_norm: float = 0.0
+        # CFG-specific fields initialized to None (created when CFG is used)
+        # These are only used when _supports_cfg_cache is True AND do_cfg is True
+        if self._supports_cfg_cache and is_cfg_negative:
+            self.previous_residual_negative: torch.Tensor | None = None
+            self.previous_residual_norm_negative: float = 0.0
         else:
             self.previous_residual_negative: torch.Tensor | None = None
             self.previous_residual_norm_negative: float = 0.0
@@ -84,20 +85,23 @@ class MagCacheMixin:
         self.reset(is_cfg_negative)
 
     def reset(self, is_cfg_negative):
-        if not is_cfg_negative:
-            self.norm_ratio = 1.0
-            self.accumulated_error = 0.0
-            self.consecutive_skips = 0
-            self.previous_residual: torch.Tensor | None = None
-            self.previous_residual_norm: float = 0.0
-        else:
+        # CFG negative cache fields (always reset, may be unused)
+        if self._supports_cfg_cache and is_cfg_negative:
             self.norm_ratio_negative = 1.0
             self.accumulated_error_negative = 0.0
             self.consecutive_skips_negative = 0
             self.previous_residual_negative: torch.Tensor | None = None
             self.previous_residual_norm_negative: float = 0.0
+        else:
+            self.norm_ratio = 1.0
+            self.accumulated_error = 0.0
+            self.consecutive_skips = 0
+            self.previous_residual: torch.Tensor | None = None
+            self.previous_residual_norm: float = 0.0
 
-    def should_skip_forward(self, current_timestep, cnt, do_cfg, is_cfg_negative=False):
+    def should_skip_forward_magcache(self, current_timestep, cnt, do_cfg, is_cfg_negative=False):
+        if not self.enable_magcache:
+            return False
 
         accumulated_error = self.accumulated_error_negative if is_cfg_negative else self.accumulated_error
         consecutive_skips = self.consecutive_skips_negative if is_cfg_negative else self.consecutive_skips
@@ -117,7 +121,7 @@ class MagCacheMixin:
 
         if accumulated_error < self.magcache_thresh and consecutive_skips <= self.max_skip_steps:
             # Write updated state back before returning
-            if is_cfg_negative:
+            if self._supports_cfg_cache and is_cfg_negative:
                 self.norm_ratio_negative = norm_ratio
                 self.accumulated_error_negative = accumulated_error
                 self.consecutive_skips_negative = consecutive_skips
@@ -171,7 +175,7 @@ class MagCacheMixin:
 
         # init cache at the start of each generation
         if current_timestep == 0:
-            self.init(is_cfg_negative, magcache_params)
+            self._init_magcache(is_cfg_negative, magcache_params)
 
         # compute cnt index differently for cond and uncond branches in CFG
         cnt = current_timestep

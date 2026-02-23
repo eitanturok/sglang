@@ -121,21 +121,32 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
         if forward_batch is None:
             return None
 
-        self.calibrate_cache = forward_batch.calibrate_cache
-        self.is_cfg_negative = forward_batch.is_cfg_negative
-
+        # chose which cache type to use (mutually exclusive)
         self.enable_teacache = forward_batch.enable_teacache
         self.enable_magcache = forward_batch.enable_magcache
         if self.enable_magcache and self.enable_teacache:
             raise ValueError("Both MagCache and TeaCache cannot be enabled at the same time")
         self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else False
 
+        # Flags indicating if this model supports CFG cache separation and if we're currently in the negative CFG branch
+        self._supports_cfg_cache = self.config.prefix.lower() in self._CFG_SUPPORTED_PREFIXES
+        self.is_cfg_negative = forward_batch.is_cfg_negative
+
+        # Flag for calibrating the cache
+        self.calibrate_cache = forward_batch.calibrate_cache
+
+        # Initialize the cache type
         if self.cache_type == 'magcache':
             self._get_context = self._get_magcache_context
             self.do_calibrate_cache = self.calibrate_magcache
+            self.should_skip_forward = self.should_skip_forward_magcache
+            self._init_magcache(self.is_cfg_negative, forward_batch.magcache_params)
         elif self.cache_type == 'teacache':
             self._get_context = self._get_teacache_context
             self.do_calibrate_cache = self.calibrate_teacache
+            self.should_skip_forward = self.should_skip_forward_teacache
+            self._init_teacache()
+
 
     def maybe_cache_states(
         self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor

@@ -83,14 +83,14 @@ class TeaCacheMixin:
                     is_boundary = (ctx.current_timestep == 0 or
                                    ctx.current_timestep >= ctx.num_inference_steps - 1)
 
-                    should_calc = self._compute_teacache_decision(
+                    should_skip = self.should_skip_forward(
                         modulated_inp=modulated_input,
                         is_boundary_step=is_boundary,
                         coefficients=ctx.coefficients,
                         teacache_thresh=ctx.teacache_thresh,
                     )
 
-                    if not should_calc:
+                    if should_skip:
                         # Use cached residual (must implement retrieve_cached_states)
                         return self.retrieve_cached_states(hidden_states)
 
@@ -129,15 +129,10 @@ class TeaCacheMixin:
     _CFG_SUPPORTED_PREFIXES: set[str] = {"wan", "hunyuan", "zimage"}
     config: DiTConfig
 
-    def _init_teacache_state(self) -> None:
+    def _init_teacache(self) -> None:
         """Initialize TeaCache state. Call this in subclass __init__."""
         # Common TeaCache state
         self.cnt = 0
-        self.enable_teacache = True
-        # Flag indicating if this model supports CFG cache separation
-        self._supports_cfg_cache = (
-            self.config.prefix.lower() in self._CFG_SUPPORTED_PREFIXES
-        )
 
         # Always initialize positive cache fields (used in all modes)
         self.previous_modulated_input: torch.Tensor | None = None
@@ -173,21 +168,17 @@ class TeaCacheMixin:
         modulated_inp: torch.Tensor,
         coefficients: list[float],
         teacache_thresh: float,
+        is_cfg_negative: bool = False,
     ) -> tuple[float, bool]:
         """
         Compute L1 distance and decide whether to calculate or use cache.
-
-        Args:
-            modulated_inp: Current timestep's modulated input.
-            coefficients: Polynomial coefficients for L1 rescaling.
-            teacache_thresh: Threshold for cache decision.
 
         Returns:
             Tuple of (new_accumulated_distance, should_calc).
         """
         prev_modulated_inp = (
             self.previous_modulated_input_negative
-            if self.is_cfg_negative
+            if is_cfg_negative
             else self.previous_modulated_input
         )
 
@@ -199,62 +190,73 @@ class TeaCacheMixin:
         diff = modulated_inp - prev_modulated_inp
         rel_l1 = (diff.abs().mean() / prev_modulated_inp.abs().mean()).cpu().item()
 
-        # Apply polynomial rescaling
-        rescale_func = np.poly1d(coefficients)
-
         accumulated_rel_l1_distance = (
             self.accumulated_rel_l1_distance_negative
-            if self.is_cfg_negative
+            if is_cfg_negative
             else self.accumulated_rel_l1_distance
         )
-        accumulated_rel_l1_distance = accumulated_rel_l1_distance + rescale_func(rel_l1)
+        accumulated_rel_l1_distance += np.poly1d(coefficients)(rel_l1)
 
         if accumulated_rel_l1_distance >= teacache_thresh:
-            # Threshold exceeded: force compute and reset accumulator
             return 0.0, True
-        # Cache hit: keep accumulated distance
         return accumulated_rel_l1_distance, False
 
-    def _compute_teacache_decision(
+    def should_skip_forward_teacache(
         self,
         modulated_inp: torch.Tensor,
-        is_boundary_step: bool,
+        cnt: int,
         coefficients: list[float],
         teacache_thresh: float,
+        num_inference_steps: int,
+        do_cfg: bool,
+        is_cfg_negative: bool = False,
+        teacache_params: "TeaCacheParams" = None,
     ) -> bool:
         """
-        Compute cache decision for TeaCache.
+        Decide whether to skip forward pass using TeaCache.
 
         Args:
-            modulated_inp: Current timestep's modulated input.
-            is_boundary_step: True for boundary timesteps that always compute.
+            modulated_inp: Current timestep's modulated input tensor.
+            cnt: Current step counter (increments each forward call, incl. CFG branches).
+            ret_steps: Number of initial steps that always compute (boundary).
+            cutoff_steps: Step index at which trailing boundary begins.
             coefficients: Polynomial coefficients for L1 rescaling.
-            teacache_thresh: Threshold for cache decision.
+            teacache_thresh: Threshold for accumulated L1 distance.
+            is_cfg_negative: Whether currently processing the negative CFG branch.
 
         Returns:
-            True if forward computation is needed, False to use cache.
+            True if forward pass should be skipped (use cache), False to compute.
         """
         if not self.enable_teacache:
-            return True
+            return False
 
+        ret_steps = teacache_params.ret_steps
+        cutoff_steps = teacache_params.get_cutoff_steps(num_inference_steps)
+        if not do_cfg:
+            ret_steps //= 2
+            cutoff_steps //= 2
+
+        is_boundary_step = cnt < ret_steps or cnt >= cutoff_steps
         if is_boundary_step:
-            new_accum, should_calc = 0.0, True
+            new_accum, should_skip = 0.0, False
         else:
             new_accum, should_calc = self._compute_l1_and_decide(
                 modulated_inp=modulated_inp,
                 coefficients=coefficients,
                 teacache_thresh=teacache_thresh,
+                is_cfg_negative=is_cfg_negative,
             )
+            should_skip = not should_calc
 
         # Advance baseline and accumulator for the active branch
-        if not self.is_cfg_negative:
+        if not is_cfg_negative:
             self.previous_modulated_input = modulated_inp.clone()
             self.accumulated_rel_l1_distance = new_accum
         elif self._supports_cfg_cache:
             self.previous_modulated_input_negative = modulated_inp.clone()
             self.accumulated_rel_l1_distance_negative = new_accum
 
-        return should_calc
+        return should_skip
 
     def _get_teacache_context(self) -> TeaCacheContext | None:
         """

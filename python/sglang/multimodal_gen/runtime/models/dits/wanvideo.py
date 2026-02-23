@@ -1012,41 +1012,21 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         if self.cache_type == 'magcache':
             return self.should_skip_forward(ctx.current_timestep, ctx.cnt, ctx.do_cfg, ctx.is_cfg_negative)
         elif self.cache_type == 'teacache':
-            # Wan uses WanTeaCacheParams with additional fields
             teacache_params = ctx.teacache_params
-            assert isinstance(
-                teacache_params, WanTeaCacheParams
-            ), "teacache_params is not a WanTeaCacheParams"
+            assert isinstance(teacache_params, WanTeaCacheParams)
 
-            # Initialize Wan-specific parameters
-            use_ret_steps = teacache_params.use_ret_steps
-            cutoff_steps = teacache_params.get_cutoff_steps(ctx.num_inference_steps)
-            ret_steps = teacache_params.ret_steps
+            modulated_inp = kwargs["timestep_proj"] if teacache_params.use_ret_steps else kwargs["temb"]
 
-            # Adjust ret_steps and cutoff_steps for non-CFG mode
-            if not ctx.do_cfg:
-                ret_steps = ret_steps // 2
-                cutoff_steps = cutoff_steps // 2
-
-            timestep_proj = kwargs["timestep_proj"]
-            temb = kwargs["temb"]
-            modulated_inp = timestep_proj if use_ret_steps else temb
-
-            self.is_cfg_negative = ctx.is_cfg_negative
-
-            # Wan uses ret_steps/cutoff_steps for boundary detection
-            is_boundary_step = self.cnt < ret_steps or self.cnt >= cutoff_steps
-
-            # Use shared helper to compute cache decision
-            should_calc = self._compute_teacache_decision(
+            return self.should_skip_forward(
                 modulated_inp=modulated_inp,
-                is_boundary_step=is_boundary_step,
+                cnt=self.cnt,
                 coefficients=ctx.coefficients,
                 teacache_thresh=ctx.teacache_thresh,
+                num_inference_steps=ctx.num_inference_steps,
+                do_cfg=ctx.do_cfg,
+                is_cfg_negative=ctx.is_cfg_negative,
+                teacache_params=ctx.teacache_params,
             )
-            ic(self.cnt, is_boundary_step, should_calc)
-
-            return not should_calc
 
         return False
 
