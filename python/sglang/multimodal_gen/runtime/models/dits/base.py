@@ -145,7 +145,7 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
             self._get_context = self._get_teacache_context
             self.do_calibrate_cache = self.calibrate_teacache
             self.should_skip_forward = self.should_skip_forward_teacache
-            self._init_teacache()
+            self._init_teacache(self.is_cfg_negative)
 
 
     def maybe_cache_states(
@@ -155,17 +155,11 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
         Cache residual for later retrieval.
         """
         residual = hidden_states.squeeze(0) - original_hidden_states
-        if not self.is_cfg_negative:
-            self.previous_residual = residual
-        else:
-            self.previous_residual_negative = residual
+        self._cache_states[int(self.is_cfg_negative)].previous_residual = residual
 
     def retrieve_cached_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Retrieve cached residual with CFG positive/negative separation."""
-        if not self.is_cfg_negative:
-            return hidden_states + self.previous_residual
-        else:
-            return hidden_states + self.previous_residual_negative
+        return hidden_states + self._cache_states[int(self.is_cfg_negative)].previous_residual
 
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         """Override in subclass to implement cache decision logic."""

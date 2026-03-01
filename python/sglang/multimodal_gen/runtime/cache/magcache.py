@@ -17,11 +17,9 @@ References:
 
 import json
 import os
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from icecream import ic
 import torch
 import torch.nn.functional as F
 
@@ -29,6 +27,24 @@ from sglang.multimodal_gen.configs.models import DiTConfig
 
 if TYPE_CHECKING:
     from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
+
+
+@dataclass
+class MagCacheState:
+    """Per-branch state for MagCache (one instance for positive, one for negative CFG)."""
+
+    norm_ratio: float = 1.0
+    accumulated_error: float = 0.0
+    consecutive_skips: int = 0
+    previous_residual: "torch.Tensor | None" = field(default=None, repr=False)
+    previous_residual_norm: float = 0.0
+
+    def reset(self) -> None:
+        self.norm_ratio = 1.0
+        self.accumulated_error = 0.0
+        self.consecutive_skips = 0
+        self.previous_residual = None
+        self.previous_residual_norm = 0.0
 
 
 @dataclass
@@ -70,68 +86,36 @@ class MagCacheMixin:
         self.min_steps = int(self.num_steps * self.retention_ratio) * 2 if self.use_ret_steps else 2
         self.max_steps = self.num_steps * 2 if self.use_ret_steps else self.num_steps * 2 - 2
 
-        # CFG-specific fields initialized to None (created when CFG is used)
-        # These are only used when _supports_cfg_cache is True AND do_cfg is True
-        if self._supports_cfg_cache and is_cfg_negative:
-            self.previous_residual_negative: torch.Tensor | None = None
-            self.previous_residual_norm_negative: float = 0.0
-        else:
-            self.previous_residual_negative: torch.Tensor | None = None
-            self.previous_residual_norm_negative: float = 0.0
-
         self.calibration_path = None
 
-        # track magnitude ratio and accumulated error for skip decision
-        self.reset(is_cfg_negative)
+        # Per-branch state: index 0 = positive CFG. Index 1 (negative) added when CFG is used.
+        self._cache_states: list[MagCacheState] = [MagCacheState()]
+        if self._supports_cfg_cache and is_cfg_negative:
+            self._cache_states.append(MagCacheState())
 
     def reset(self, is_cfg_negative):
-        # CFG negative cache fields (always reset, may be unused)
-        if self._supports_cfg_cache and is_cfg_negative:
-            self.norm_ratio_negative = 1.0
-            self.accumulated_error_negative = 0.0
-            self.consecutive_skips_negative = 0
-            self.previous_residual_negative: torch.Tensor | None = None
-            self.previous_residual_norm_negative: float = 0.0
-        else:
-            self.norm_ratio = 1.0
-            self.accumulated_error = 0.0
-            self.consecutive_skips = 0
-            self.previous_residual: torch.Tensor | None = None
-            self.previous_residual_norm: float = 0.0
+        self._cache_states[int(is_cfg_negative)].reset()
 
     def should_skip_forward_magcache(self, current_timestep, cnt, do_cfg, is_cfg_negative=False):
         if not self.enable_magcache:
             return False
 
-        accumulated_error = self.accumulated_error_negative if is_cfg_negative else self.accumulated_error
-        consecutive_skips = self.consecutive_skips_negative if is_cfg_negative else self.consecutive_skips
-        norm_ratio = self.norm_ratio_negative if is_cfg_negative else self.norm_ratio
+        state = self._cache_states[int(is_cfg_negative)]
 
         # always compute first few and last few steps
         is_boundary_step = cnt < self.min_steps or cnt >= self.max_steps
         if is_boundary_step:
-            self.reset(is_cfg_negative)
+            state.reset()
             return False
 
-        cur_mag_ratio = self.mag_ratios[cnt] # access pre-calibrated magnitude ratio for current step
-        norm_ratio = norm_ratio * cur_mag_ratio # magnitude ratio between current step and the cached step
-        consecutive_skips += 1 # skip steps plus 1
-        cur_skip_err = abs(1 - norm_ratio) # skip error of current steps
-        accumulated_error += cur_skip_err # accumulated error of multiple steps
+        state.norm_ratio *= self.mag_ratios[cnt]  # magnitude ratio between current step and the cached step
+        state.consecutive_skips += 1
+        state.accumulated_error += abs(1 - state.norm_ratio)
 
-        if accumulated_error < self.magcache_thresh and consecutive_skips <= self.max_skip_steps:
-            # Write updated state back before returning
-            if self._supports_cfg_cache and is_cfg_negative:
-                self.norm_ratio_negative = norm_ratio
-                self.accumulated_error_negative = accumulated_error
-                self.consecutive_skips_negative = consecutive_skips
-            else:
-                self.norm_ratio = norm_ratio
-                self.accumulated_error = accumulated_error
-                self.consecutive_skips = consecutive_skips
+        if state.accumulated_error < self.magcache_thresh and state.consecutive_skips <= self.max_skip_steps:
             return True
         else:
-            self.reset(is_cfg_negative)
+            state.reset()
             return False
 
     def calibrate_magcache(self, ctx, hidden_states, original_hidden_states):
@@ -145,7 +129,7 @@ class MagCacheMixin:
             model_name = get_global_server_args().model_path.replace("/", "--")
             self.calibration_path = os.path.join(cache_dir, f"{model_name}.jsonl")
 
-        prev_residual = self.previous_residual_negative if ctx.is_cfg_negative else self.previous_residual
+        prev_residual = self._cache_states[int(ctx.is_cfg_negative)].previous_residual
         if prev_residual is None:
             mag_ratio = 1.0
             mag_std = 0.0

@@ -17,7 +17,7 @@ References:
   https://arxiv.org/abs/2411.14324
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -27,6 +27,20 @@ from sglang.multimodal_gen.configs.models import DiTConfig
 
 if TYPE_CHECKING:
     from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
+
+
+@dataclass
+class TeaCacheState:
+    """Per-branch state for TeaCache (one instance for positive, one for negative CFG)."""
+
+    previous_modulated_input: "torch.Tensor | None" = field(default=None, repr=False)
+    previous_residual: "torch.Tensor | None" = field(default=None, repr=False)
+    accumulated_rel_l1_distance: float = 0.0
+
+    def reset(self) -> None:
+        self.previous_modulated_input = None
+        self.previous_residual = None
+        self.accumulated_rel_l1_distance = 0.0
 
 
 @dataclass
@@ -119,9 +133,7 @@ class TeaCacheMixin:
         _supports_cfg_cache: Whether this model supports CFG cache separation.
 
     CFG-specific attributes (only when _supports_cfg_cache is True):
-        previous_modulated_input_negative: Cached input for negative branch.
-        previous_residual_negative: Cached residual for negative branch.
-        accumulated_rel_l1_distance_negative: L1 distance for negative branch.
+        _cache_states[1]: TeaCacheState for the negative CFG branch.
     """
 
     # Models that support CFG cache separation (wan/hunyuan/zimage)
@@ -129,39 +141,23 @@ class TeaCacheMixin:
     _CFG_SUPPORTED_PREFIXES: set[str] = {"wan", "hunyuan", "zimage"}
     config: DiTConfig
 
-    def _init_teacache(self) -> None:
+    def _init_teacache(self, is_cfg_negative: bool = False) -> None:
         """Initialize TeaCache state. Call this in subclass __init__."""
-        # Common TeaCache state
         self.cnt = 0
-
-        # Always initialize positive cache fields (used in all modes)
-        self.previous_modulated_input: torch.Tensor | None = None
-        self.previous_residual: torch.Tensor | None = None
-        self.accumulated_rel_l1_distance: float = 0.0
-
         self.is_cfg_negative = False
-        # CFG-specific fields initialized to None (created when CFG is used)
-        # These are only used when _supports_cfg_cache is True AND do_cfg is True
-        if self._supports_cfg_cache:
-            self.previous_modulated_input_negative: torch.Tensor | None = None
-            self.previous_residual_negative: torch.Tensor | None = None
-            self.accumulated_rel_l1_distance_negative: float = 0.0
+
+        # Per-branch state: index 0 = positive CFG. Index 1 (negative) added when CFG is used.
+        self._cache_states: list[TeaCacheState] = [TeaCacheState()]
+        if self._supports_cfg_cache and is_cfg_negative:
+            self._cache_states.append(TeaCacheState())
 
     def reset_teacache_state(self) -> None:
         """Reset all TeaCache state at the start of each generation task."""
         self.cnt = 0
-
-        # Primary cache fields (always present)
-        self.previous_modulated_input = None
-        self.previous_residual = None
-        self.accumulated_rel_l1_distance = 0.0
         self.is_cfg_negative = False
         self.enable_teacache = True
-        # CFG negative cache fields (always reset, may be unused)
-        if self._supports_cfg_cache:
-            self.previous_modulated_input_negative = None
-            self.previous_residual_negative = None
-            self.accumulated_rel_l1_distance_negative = 0.0
+        for state in self._cache_states:
+            state.reset()
 
     def _compute_l1_and_decide(
         self,
@@ -176,26 +172,17 @@ class TeaCacheMixin:
         Returns:
             Tuple of (new_accumulated_distance, should_calc).
         """
-        prev_modulated_inp = (
-            self.previous_modulated_input_negative
-            if is_cfg_negative
-            else self.previous_modulated_input
-        )
+        state = self._cache_states[int(is_cfg_negative)]
 
         # Defensive check: if previous input is not set, force calculation
-        if prev_modulated_inp is None:
+        if state.previous_modulated_input is None:
             return 0.0, True
 
         # Compute relative L1 distance
-        diff = modulated_inp - prev_modulated_inp
-        rel_l1 = (diff.abs().mean() / prev_modulated_inp.abs().mean()).cpu().item()
+        diff = modulated_inp - state.previous_modulated_input
+        rel_l1 = (diff.abs().mean() / state.previous_modulated_input.abs().mean()).cpu().item()
 
-        accumulated_rel_l1_distance = (
-            self.accumulated_rel_l1_distance_negative
-            if is_cfg_negative
-            else self.accumulated_rel_l1_distance
-        )
-        accumulated_rel_l1_distance += np.poly1d(coefficients)(rel_l1)
+        accumulated_rel_l1_distance = state.accumulated_rel_l1_distance + np.poly1d(coefficients)(rel_l1)
 
         if accumulated_rel_l1_distance >= teacache_thresh:
             return 0.0, True
@@ -249,12 +236,9 @@ class TeaCacheMixin:
             should_skip = not should_calc
 
         # Advance baseline and accumulator for the active branch
-        if not is_cfg_negative:
-            self.previous_modulated_input = modulated_inp.clone()
-            self.accumulated_rel_l1_distance = new_accum
-        elif self._supports_cfg_cache:
-            self.previous_modulated_input_negative = modulated_inp.clone()
-            self.accumulated_rel_l1_distance_negative = new_accum
+        state = self._cache_states[int(is_cfg_negative)]
+        state.previous_modulated_input = modulated_inp.clone()
+        state.accumulated_rel_l1_distance = new_accum
 
         return should_skip
 
