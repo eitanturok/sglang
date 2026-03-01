@@ -157,10 +157,8 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
         Cache residual for later retrieval.
         """
         residual = hidden_states.squeeze(0) - original_hidden_states
-        if self.is_cfg_negative:
-            self.cache_state_neg.previous_residual = residual
-        else:
-            self.cache_state.previous_residual = residual
+        state = self.cache_state_neg if self.is_cfg_negative else self.cache_state
+        state.previous_residual = residual
 
     def retrieve_cached_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Retrieve cached residual with CFG positive/negative separation."""

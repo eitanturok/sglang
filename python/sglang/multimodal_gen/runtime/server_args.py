@@ -196,8 +196,6 @@ class ServerArgs:
     # Attention
     attention_backend: str = None
     attention_backend_config: addict.Dict | None = None
-
-    # Cache acceleration
     cache_dit_config: str | dict[str, Any] | None = (
         None  # cache-dit config for diffusers
     )

@@ -676,11 +676,6 @@ class HunyuanVideoTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         return img
 
-    def maybe_cache_states(
-        self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor
-    ) -> None:
-        self._cache_states[int(self.is_cfg_negative)].previous_residual = hidden_states - original_hidden_states
-
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
 
         forward_context = get_forward_context()
