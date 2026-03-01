@@ -877,10 +877,17 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         **kwargs,
     ) -> torch.Tensor:
 
-        if self.cache_type is None:
-            self.init_cache()
+        forward_context = get_forward_context()
+        forward_batch = forward_context.forward_batch
+        current_timestep = forward_context.current_timestep
+        is_cfg_negative = forward_batch.is_cfg_negative if forward_batch is not None else False
 
-        forward_batch = get_forward_context().forward_batch
+        if self.cache_type is None:
+            ic('initializing cache')
+            self.init_cache()
+        elif current_timestep == 0 and not is_cfg_negative:
+            self.reset_cache_state()
+
         if forward_batch is not None:
             sequence_shard_enabled = (
                 forward_batch.enable_sequence_shard and self.sp_size > 1

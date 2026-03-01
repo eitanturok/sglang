@@ -40,6 +40,7 @@ class MagCacheState:
     previous_residual_norm: float = 0.0
 
     def reset(self) -> None:
+        ic('resetting MagCacheState')
         self.norm_ratio = 1.0
         self.accumulated_error = 0.0
         self.consecutive_skips = 0
@@ -74,7 +75,7 @@ class MagCacheMixin:
     _CFG_SUPPORTED_PREFIXES: set[str] = {"wan", "hunyuan", "zimage"}
     config: DiTConfig
 
-    def _init_magcache(self, is_cfg_negative:bool, magcache_params:"MagCacheParams") -> None:
+    def _init_magcache(self, magcache_params:"MagCacheParams") -> None:
 
         self.num_steps = magcache_params.num_steps # todo: don't hardcode
         self.retention_ratio = magcache_params.retention_ratio
@@ -88,19 +89,22 @@ class MagCacheMixin:
 
         self.calibration_path = None
 
-        # Per-branch state: index 0 = positive CFG. Index 1 (negative) added when CFG is used.
-        self._cache_states: list[MagCacheState] = [MagCacheState()]
-        if self._supports_cfg_cache and is_cfg_negative:
-            self._cache_states.append(MagCacheState())
+        # Initialize separate cache states for positive and negative CFG branches if supported
+        self.cache_state = MagCacheState()
+        self.cache_state_neg = MagCacheState() if self._supports_cfg_cache else None
 
-    def reset(self, is_cfg_negative):
-        self._cache_states[int(is_cfg_negative)].reset()
+    def reset_magcache_state(self) -> None:
+        """Reset all MagCache state at the start of each generation."""
+        self.cache_state.reset()
+        if self.cache_state_neg is not None:
+            self.cache_state_neg.reset()
 
     def should_skip_forward_magcache(self, current_timestep, cnt, do_cfg, is_cfg_negative=False):
+        ic(f'skip magcache {cnt}, do_cfg={do_cfg}, is_cfg_negative={is_cfg_negative}, {current_timestep=}')
         if not self.enable_magcache:
             return False
 
-        state = self._cache_states[int(is_cfg_negative)]
+        state = self.cache_state_neg if is_cfg_negative else self.cache_state
 
         # always compute first few and last few steps
         is_boundary_step = cnt < self.min_steps or cnt >= self.max_steps
@@ -129,7 +133,8 @@ class MagCacheMixin:
             model_name = get_global_server_args().model_path.replace("/", "--")
             self.calibration_path = os.path.join(cache_dir, f"{model_name}.jsonl")
 
-        prev_residual = self._cache_states[int(ctx.is_cfg_negative)].previous_residual
+        state = self.cache_state_neg if ctx.is_cfg_negative else self.cache_state
+        prev_residual = state.previous_residual
         if prev_residual is None:
             mag_ratio = 1.0
             mag_std = 0.0
@@ -156,10 +161,6 @@ class MagCacheMixin:
         is_cfg_negative=forward_batch.is_cfg_negative
         magcache_params=getattr(forward_batch.sampling_params, "magcache_params", None)
         assert magcache_params is not None, "MagCache parameters not found in sampling_params." # todo: what about calibration
-
-        # init cache at the start of each generation
-        if current_timestep == 0:
-            self._init_magcache(is_cfg_negative, magcache_params)
 
         # compute cnt index differently for cond and uncond branches in CFG
         cnt = current_timestep

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class TeaCacheState:
-    """Per-branch state for TeaCache (one instance for positive, one for negative CFG)."""
+    """State for TeaCache (one instance for positive, one for negative CFG)."""
 
     previous_modulated_input: "torch.Tensor | None" = field(default=None, repr=False)
     previous_residual: "torch.Tensor | None" = field(default=None, repr=False)
@@ -131,9 +131,6 @@ class TeaCacheMixin:
         accumulated_rel_l1_distance: Accumulated L1 distance for positive branch.
         is_cfg_negative: Whether currently processing negative CFG branch.
         _supports_cfg_cache: Whether this model supports CFG cache separation.
-
-    CFG-specific attributes (only when _supports_cfg_cache is True):
-        _cache_states[1]: TeaCacheState for the negative CFG branch.
     """
 
     # Models that support CFG cache separation (wan/hunyuan/zimage)
@@ -146,18 +143,20 @@ class TeaCacheMixin:
         self.cnt = 0
         self.is_cfg_negative = False
 
-        # Per-branch state: index 0 = positive CFG. Index 1 (negative) added when CFG is used.
-        self._cache_states: list[TeaCacheState] = [TeaCacheState()]
-        if self._supports_cfg_cache and is_cfg_negative:
-            self._cache_states.append(TeaCacheState())
+        # Per-branch state: index 0 = positive CFG, index 1 = negative CFG.
+        # Always allocate both slots for CFG-capable models so the negative branch
+        # can index _cache_states[1] without a bounds check.
+        self.cache_state = TeaCacheState()
+        self.cache_state_neg = TeaCacheState() if self._supports_cfg_cache else None
 
     def reset_teacache_state(self) -> None:
         """Reset all TeaCache state at the start of each generation task."""
         self.cnt = 0
         self.is_cfg_negative = False
         self.enable_teacache = True
-        for state in self._cache_states:
-            state.reset()
+        self.cache_state.reset()
+        if self._supports_cfg_cache:
+            self.cache_state_neg.reset()
 
     def _compute_l1_and_decide(
         self,
@@ -172,7 +171,7 @@ class TeaCacheMixin:
         Returns:
             Tuple of (new_accumulated_distance, should_calc).
         """
-        state = self._cache_states[int(is_cfg_negative)]
+        state = self.cache_state_neg if is_cfg_negative else self.cache_state
 
         # Defensive check: if previous input is not set, force calculation
         if state.previous_modulated_input is None:
@@ -236,7 +235,7 @@ class TeaCacheMixin:
             should_skip = not should_calc
 
         # Advance baseline and accumulator for the active branch
-        state = self._cache_states[int(is_cfg_negative)]
+        state = self.cache_state_neg if is_cfg_negative else self.cache_state
         state.previous_modulated_input = modulated_inp.clone()
         state.accumulated_rel_l1_distance = new_accum
 
@@ -268,12 +267,6 @@ class TeaCacheMixin:
         num_inference_steps = forward_batch.num_inference_steps
         do_cfg = forward_batch.do_classifier_free_guidance
         is_cfg_negative = forward_batch.is_cfg_negative
-
-        # Re-initialize and reset at the start of each generation
-        if current_timestep == 0 and not is_cfg_negative:
-            if not hasattr(self, 'cnt'):
-                self._init_teacache_state()
-            self.reset_teacache_state()
 
         return TeaCacheContext(
             current_timestep=current_timestep,
