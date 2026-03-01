@@ -71,6 +71,10 @@ def _build_video_sampling_params(request_id: str, request: VideoGenerationsReque
         enable_teacache=request.enable_teacache,
         enable_magcache=request.enable_magcache,
         calibrate_cache=request.calibrate_cache,
+        enable_frame_interpolation=request.enable_frame_interpolation,
+        frame_interpolation_exp=request.frame_interpolation_exp,
+        frame_interpolation_scale=request.frame_interpolation_scale,
+        frame_interpolation_model_path=request.frame_interpolation_model_path,
         output_path=request.output_path,
         output_compression=request.output_compression,
         output_quality=request.output_quality,
@@ -142,7 +146,6 @@ async def _dispatch_job_async(job_id: str, batch: Req) -> None:
 
 
 # TODO: support image to video generation
-# TODO: this is currently not used
 @router.post("", response_model=VideoResponse)
 async def create_video(
     request: Request,
@@ -163,6 +166,10 @@ async def create_video(
     enable_teacache: Optional[bool] = Form(False),
     enable_magcache: Optional[bool] = Form(False),
     calibrate_cache: Optional[bool] = Form(False),
+    enable_frame_interpolation: Optional[bool] = Form(False),
+    frame_interpolation_exp: Optional[int] = Form(1),
+    frame_interpolation_scale: Optional[float] = Form(1.0),
+    frame_interpolation_model_path: Optional[str] = Form(None),
     output_quality: Optional[str] = Form("default"),
     output_compression: Optional[int] = Form(None),
     extra_body: Optional[str] = Form(None),
@@ -218,6 +225,10 @@ async def create_video(
             enable_teacache=enable_teacache,
             enable_magcache=enable_magcache,
             calibrate_cache=calibrate_cache,
+            enable_frame_interpolation=enable_frame_interpolation,
+            frame_interpolation_exp=frame_interpolation_exp,
+            frame_interpolation_scale=frame_interpolation_scale,
+            frame_interpolation_model_path=frame_interpolation_model_path,
             output_compression=output_compression,
             output_quality=output_quality,
             **(
@@ -267,7 +278,11 @@ async def create_video(
 
     logger.debug(f"Server received from create_video endpoint: req={req}")
 
-    sampling_params = _build_video_sampling_params(request_id, req)
+    try:
+        sampling_params = _build_video_sampling_params(request_id, req)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     job = _video_job_from_sampling(request_id, req, sampling_params)
     await VIDEO_STORE.upsert(request_id, job)
 
