@@ -112,8 +112,7 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
 
     def init_cache(self):
         """
-        Initialize cache state.
-        This should be called at the beginning of the forward pass because it depends on the forward batch context.
+        Initialize cache state in the forward pass because it depends on the forward batch context.
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
         forward_context = get_forward_context()
@@ -126,7 +125,8 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
         self.enable_magcache = forward_batch.enable_magcache
         if self.enable_magcache and self.enable_teacache:
             raise ValueError("Both MagCache and TeaCache cannot be enabled at the same time")
-        self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else False
+        self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else None
+        ic(self.cache_type)
 
         # Flags indicating if this model supports CFG cache separation and if we're currently in the negative CFG branch
         self._supports_cfg_cache = self.config.prefix.lower() in self._CFG_SUPPORTED_PREFIXES
@@ -147,7 +147,7 @@ class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
             self.do_calibrate_cache = self.calibrate_teacache
             self.should_skip_forward = self.should_skip_forward_teacache
             self.reset_cache_state = self.reset_teacache_state
-            self._init_teacache(self.is_cfg_negative)
+            self._init_teacache()
 
 
     def maybe_cache_states(

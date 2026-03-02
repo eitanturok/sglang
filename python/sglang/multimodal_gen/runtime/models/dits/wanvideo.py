@@ -883,9 +883,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         is_cfg_negative = forward_batch.is_cfg_negative if forward_batch is not None else False
 
         if self.cache_type is None:
-            ic('initializing cache')
             self.init_cache()
-        elif current_timestep == 0 and not is_cfg_negative:
+        if self.cache_type is not None and current_timestep == 0 and not is_cfg_negative:
             self.reset_cache_state()
 
         if forward_batch is not None:
@@ -1049,7 +1048,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             elif self.cache_type is not None:
                 self.maybe_cache_states(hidden_states, original_hidden_states)
 
-        self.cnt += 1 # todo: use this cnt in calibrate, maybe_skip_forward_for_cached_states
+        self.cnt += 1
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()
@@ -1090,42 +1089,20 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         """Check both TeaCache and MagCache (route between strategies)."""
 
-        # when calibrating cache, cannot skip forward pass
-        if self.calibrate_cache:
+        # if cache is not enabled or calibrating, do not skip forward pass
+        if self.cache_type is None or self.calibrate_cache:
             return False
 
-        # if context is not available, cannot make decision to skip forward pass
         ctx = self._get_context()
         if ctx is None:
             return False
 
-        if self.cache_type == 'magcache':
-            return self.should_skip_forward(ctx.current_timestep, ctx.cnt, ctx.do_cfg, ctx.is_cfg_negative)
-        elif self.cache_type == 'teacache':
-            teacache_params = ctx.teacache_params
-            assert isinstance(teacache_params, WanTeaCacheParams)
+        return self.should_skip_forward(ctx, **kwargs)
 
-            modulated_inp = kwargs["timestep_proj"] if teacache_params.use_ret_steps else kwargs["temb"]
-
-            return self.should_skip_forward(
-                modulated_inp=modulated_inp,
-                cnt=self.cnt,
-                coefficients=ctx.coefficients,
-                teacache_thresh=ctx.teacache_thresh,
-                num_inference_steps=ctx.num_inference_steps,
-                do_cfg=ctx.do_cfg,
-                is_cfg_negative=ctx.is_cfg_negative,
-                teacache_params=ctx.teacache_params,
-            )
-
-        return False
-
-    def calibrate(self, **kwargs):
-        if self.enable_magcache:
-            ctx = self._get_magcache_context()
-            assert ctx is not None, "MagCache context should not be None when calibrating MagCache"
-            self.calibrate_cache(ctx, **kwargs)
-        if self.enable_teacache:
-            self.calibrate_teacache(**kwargs)
+    def do_calibrate_cache(self, **kwargs):
+        ctx = self._get_context()
+        if ctx is None:
+            raise ValueError("Context should not be None when calibrating cache")
+        self.calibrate_cache(ctx, **kwargs)
 
 EntryClass = WanTransformer3DModel

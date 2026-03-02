@@ -28,15 +28,14 @@ from sglang.multimodal_gen.configs.models import DiTConfig
 if TYPE_CHECKING:
     from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
 
-
 @dataclass
 class MagCacheState:
-    """Per-branch state for MagCache (one instance for positive, one for negative CFG)."""
+    """MagCache state for a single CFG branch (positive or negative)."""
 
     norm_ratio: float = 1.0
     accumulated_error: float = 0.0
     consecutive_skips: int = 0
-    previous_residual: "torch.Tensor | None" = field(default=None, repr=False)
+    previous_residual: torch.Tensor | None = field(default=None, repr=False)
     previous_residual_norm: float = 0.0
 
     def reset(self) -> None:
@@ -63,11 +62,9 @@ class MagCacheContext:
         is_cfg_negative: True if currently processing negative CFG branch.
     """
 
-    current_timestep: int
     cnt: int
     do_cfg: bool
     is_cfg_negative: bool
-    magcache_params: "MagCacheParams | None" = None
 
 
 class MagCacheMixin:
@@ -77,16 +74,9 @@ class MagCacheMixin:
 
     def _init_magcache(self, magcache_params:"MagCacheParams") -> None:
 
-        self.num_steps = magcache_params.num_steps # todo: don't hardcode
-        self.retention_ratio = magcache_params.retention_ratio
-        self.magcache_thresh = magcache_params.threshold
-        self.max_skip_steps = magcache_params.max_skip_steps
-        self.mag_ratios = magcache_params.mag_ratios
-        self.use_ret_steps = magcache_params.use_ret_steps
-
-        self.min_steps = int(self.num_steps * self.retention_ratio) * 2 if self.use_ret_steps else 2
-        self.max_steps = self.num_steps * 2 if self.use_ret_steps else self.num_steps * 2 - 2
-
+        self.magcache_params = magcache_params
+        self.min_steps = int(self.magcache_params.num_steps * self.magcache_params.retention_ratio) * 2 if self.magcache_params.use_ret_steps else 2
+        self.max_steps = self.magcache_params.num_steps * 2 if self.magcache_params.use_ret_steps else self.magcache_params.num_steps * 2 - 2
         self.calibration_path = None
 
         # Initialize separate cache states for positive and negative CFG branches if supported
@@ -99,8 +89,10 @@ class MagCacheMixin:
         if self.cache_state_neg is not None:
             self.cache_state_neg.reset()
 
-    def should_skip_forward_magcache(self, current_timestep, cnt, do_cfg, is_cfg_negative=False):
-        ic(f'skip magcache {cnt}, do_cfg={do_cfg}, is_cfg_negative={is_cfg_negative}, {current_timestep=}')
+    def should_skip_forward_magcache(self, ctx: MagCacheContext) -> bool:
+        cnt, do_cfg, is_cfg_negative = ctx.cnt, ctx.do_cfg, ctx.is_cfg_negative
+        msg = f'skip magcache {cnt}, do_cfg={do_cfg}, is_cfg_negative={is_cfg_negative}'
+
         if not self.enable_magcache:
             return False
 
@@ -112,26 +104,19 @@ class MagCacheMixin:
             state.reset()
             return False
 
-        state.norm_ratio *= self.mag_ratios[cnt]  # magnitude ratio between current step and the cached step
+        # compute norm ratio and accumulated error
+        state.norm_ratio *= self.magcache_params.mag_ratios[cnt]  # magnitude ratio between current step and the cached step
         state.consecutive_skips += 1
         state.accumulated_error += abs(1 - state.norm_ratio)
 
-        if state.accumulated_error < self.magcache_thresh and state.consecutive_skips <= self.max_skip_steps:
+        # skip if accumulated error is within threshold and we haven't exceeded max consecutive skips
+        if state.accumulated_error < self.magcache_params.magcache_thresh and state.consecutive_skips <= self.magcache_params.max_skip_steps:
             return True
-        else:
-            state.reset()
-            return False
+        # otherwise, reset the cache state and do not skip
+        state.reset()
+        return False
 
     def calibrate_magcache(self, ctx, hidden_states, original_hidden_states):
-
-        # create directory for magcache calibration results
-        if self.calibration_path is None:
-            from sglang.multimodal_gen.envs import SGLANG_DIFFUSION_CACHE_ROOT
-            from sglang.multimodal_gen.runtime.server_args import get_global_server_args
-            cache_dir = os.path.join(SGLANG_DIFFUSION_CACHE_ROOT, "magcache_calibration")
-            os.makedirs(cache_dir, exist_ok=True)
-            model_name = get_global_server_args().model_path.replace("/", "--")
-            self.calibration_path = os.path.join(cache_dir, f"{model_name}.jsonl")
 
         state = self.cache_state_neg if ctx.is_cfg_negative else self.cache_state
         prev_residual = state.previous_residual
@@ -145,6 +130,16 @@ class MagCacheMixin:
             mag_std = (curr_residual.norm(dim=-1)/prev_residual.norm(dim=-1)).std().item()
             cos_dis = (1-F.cosine_similarity(curr_residual, prev_residual, dim=-1, eps=1e-8)).mean().item()
 
+        # create directory for magcache calibration results
+        if self.calibration_path is None:
+            from sglang.multimodal_gen.envs import SGLANG_DIFFUSION_CACHE_ROOT
+            from sglang.multimodal_gen.runtime.server_args import get_global_server_args
+            cache_dir = os.path.join(SGLANG_DIFFUSION_CACHE_ROOT, "magcache_calibration")
+            os.makedirs(cache_dir, exist_ok=True)
+            model_name = get_global_server_args().model_path.replace("/", "--")
+            self.calibration_path = os.path.join(cache_dir, f"{model_name}.jsonl")
+
+        # append calibration record to file
         with open(self.calibration_path, "a") as f:
             f.write(json.dumps({"cnt": ctx.cnt, "mag_ratio": mag_ratio, "mag_std": mag_std, "cos_dis": cos_dis, "negative": ctx.is_cfg_negative}) + "\n")
 
@@ -160,7 +155,6 @@ class MagCacheMixin:
         do_cfg=forward_batch.do_classifier_free_guidance
         is_cfg_negative=forward_batch.is_cfg_negative
         magcache_params=getattr(forward_batch.sampling_params, "magcache_params", None)
-        assert magcache_params is not None, "MagCache parameters not found in sampling_params." # todo: what about calibration
 
         # compute cnt index differently for cond and uncond branches in CFG
         cnt = current_timestep
