@@ -58,7 +58,7 @@ class TeaCacheContext:
         teacache_params: Full TeaCacheParams for model-specific access.
     """
 
-    current_timestep: int
+    cnt: int
     num_inference_steps: int
     do_cfg: bool
     is_cfg_negative: bool  # For CFG branch selection
@@ -141,7 +141,7 @@ class TeaCacheMixin:
 
     def reset_teacache_state(self) -> None:
         """Reset all TeaCache state at the start of each generation task."""
-        self.cnt = 0
+        # self.cnt = 0 #todo: remove?
         self.cache_state.reset()
         if self._supports_cfg_cache:
             self.cache_state_neg.reset()
@@ -166,28 +166,30 @@ class TeaCacheMixin:
         if not self.enable_teacache:
             return False
 
-        current_timestep, num_inference_steps, do_cfg, is_cfg_negative, teacache_params = (
-            ctx.current_timestep,
+        # unpack parameters
+        cnt, num_inference_steps, do_cfg, is_cfg_negative, teacache_params = (
+            ctx.cnt,
             ctx.num_inference_steps,
             ctx.do_cfg,
             ctx.is_cfg_negative,
             ctx.teacache_params,
         )
-        teacache_thresh=teacache_params.teacache_thresh,
-        coefficients=teacache_params.coefficients,
         modulated_inp = kwargs["timestep_proj"] if teacache_params.use_ret_steps else kwargs["temb"]
         state = self.cache_state_neg if is_cfg_negative else self.cache_state
 
+        # do not skip if boundary step
         ret_steps = teacache_params.ret_steps
         cutoff_steps = teacache_params.get_cutoff_steps(num_inference_steps)
         if not do_cfg:
             ret_steps //= 2
             cutoff_steps //= 2
+        is_boundary_step = cnt < ret_steps or cnt >= cutoff_steps
+        if is_boundary_step:
+            state.accumulated_rel_l1_distance = 0.0
+            return False
 
-        # do not skip the first few and last few steps
-        # Also, if previous input is not set, do not skip
-        is_boundary_step = current_timestep < ret_steps or current_timestep >= cutoff_steps
-        if is_boundary_step or state.previous_modulated_input is None:
+        # do not skip if previous input is not set
+        if state.previous_modulated_input is None:
             state.accumulated_rel_l1_distance = 0.0
             return False
 
@@ -197,10 +199,10 @@ class TeaCacheMixin:
         # compute relative L1 distance and accumulated distance
         diff = modulated_inp - state.previous_modulated_input
         rel_l1 = (diff.abs().mean() / state.previous_modulated_input.abs().mean()).cpu().item()
-        accumulated_rel_l1_distance = state.accumulated_rel_l1_distance + np.poly1d(coefficients)(rel_l1)
+        accumulated_rel_l1_distance = state.accumulated_rel_l1_distance + np.poly1d(teacache_params.coefficients)(rel_l1)
 
         # skip if accumulated distance is below threshold, otherwise reset and do not skip
-        if accumulated_rel_l1_distance < teacache_thresh:
+        if accumulated_rel_l1_distance < teacache_params.teacache_thresh:
             state.accumulated_rel_l1_distance = accumulated_rel_l1_distance
             return True  # skip forward, use cache
         state.accumulated_rel_l1_distance = 0.0
@@ -224,7 +226,7 @@ class TeaCacheMixin:
             return None
 
         return TeaCacheContext(
-            current_timestep=forward_context.current_timestep,
+            cnt=self.cnt,
             num_inference_steps=forward_batch.num_inference_steps,
             do_cfg=forward_batch.do_classifier_free_guidance,
             is_cfg_negative=forward_batch.is_cfg_negative,
