@@ -39,12 +39,14 @@ class MagCacheState:
 
 @dataclass
 class MagCacheContext:
-    """Per-step snapshot for MagCache decisions.
+    """Per-step snapshot for TeaCache decisions.
 
     cnt is the forward-call index: timestep * 2 + cfg_offset when CFG is on,
-    used to index into mag_ratios and for boundary checks.
+    so boundary thresholds (ret_steps / cutoff_steps) are in the same units.
     """
     cnt: int
+    num_inference_steps: int
+    do_cfg: bool
     is_cfg_negative: bool
     params: "MagCacheParams"
 
@@ -57,7 +59,6 @@ class MagCacheStrategy(DiffusionCache):
     """
 
     def __init__(self, params: "MagCacheParams", supports_cfg_cache: bool) -> None:
-        # Precompute boundary step indices from params (only needed at init)
         self.min_steps = int(params.num_steps * params.retention_ratio) * 2 if params.use_ret_steps else 2
         self.max_steps = params.num_steps * 2 if params.use_ret_steps else params.num_steps * 2 - 2
         self.calibration_path = None
@@ -65,6 +66,7 @@ class MagCacheStrategy(DiffusionCache):
         self.state_neg = MagCacheState() if supports_cfg_cache else None
 
     def reset(self) -> None:
+        assert isinstance(self.state, MagCacheState)
         self.state.reset()
         self.state.previous_residual = None
         if self.state_neg is not None:
@@ -78,15 +80,19 @@ class MagCacheStrategy(DiffusionCache):
         if fb is None:
             return None
 
+        steps = fb.num_inference_steps
+        do_cfg = fb.do_classifier_free_guidance
         is_neg = fb.is_cfg_negative
         params = getattr(fb.sampling_params, "magcache_params", None)
         assert params is not None, "MagCacheStrategy requires magcache_params in sampling_params"
-        return MagCacheContext(cnt=cnt, is_cfg_negative=is_neg, params=params)
+
+        return MagCacheContext(cnt, steps, do_cfg, is_neg, params)
 
     def should_skip(self, ctx: MagCacheContext, **kwargs) -> bool:
         state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
+        assert isinstance(state, MagCacheState) and isinstance(ctx, MagCacheContext)
 
-        # Always compute boundary steps
+        # Never skip on boundary steps
         if ctx.cnt < self.min_steps or ctx.cnt >= self.max_steps:
             state.reset()
             return False
@@ -106,8 +112,9 @@ class MagCacheStrategy(DiffusionCache):
 
     def calibrate(self, hidden_states, original_hidden_states, ctx: MagCacheContext) -> None:
         state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
-        prev = state.previous_residual
+        assert isinstance(state, MagCacheState) and isinstance(ctx, MagCacheContext)
 
+        prev = state.previous_residual
         curr = hidden_states.squeeze(0) - original_hidden_states
 
         if prev is None:
