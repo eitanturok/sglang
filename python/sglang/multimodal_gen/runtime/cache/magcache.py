@@ -35,7 +35,6 @@ class MagCacheState:
         self.norm_ratio = 1.0
         self.accumulated_error = 0.0
         self.consecutive_skips = 0
-        self.previous_residual = None
 
 
 @dataclass
@@ -46,7 +45,6 @@ class MagCacheContext:
     used to index into mag_ratios and for boundary checks.
     """
     cnt: int
-    do_cfg: bool
     is_cfg_negative: bool
     params: "MagCacheParams"
 
@@ -68,8 +66,10 @@ class MagCacheStrategy(DiffusionCache):
 
     def reset(self) -> None:
         self.state.reset()
+        self.state.previous_residual = None
         if self.state_neg is not None:
             self.state_neg.reset()
+            self.state_neg.previous_residual = None
 
     def get_context(self, cnt: int) -> MagCacheContext | None:
         from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
@@ -78,12 +78,10 @@ class MagCacheStrategy(DiffusionCache):
         if fb is None:
             return None
 
-        do_cfg = fb.do_classifier_free_guidance
         is_neg = fb.is_cfg_negative
         params = getattr(fb.sampling_params, "magcache_params", None)
         assert params is not None, "MagCacheStrategy requires magcache_params in sampling_params"
-
-        return MagCacheContext(cnt=cnt, do_cfg=do_cfg, is_cfg_negative=is_neg, params=params)
+        return MagCacheContext(cnt=cnt, is_cfg_negative=is_neg, params=params)
 
     def should_skip(self, ctx: MagCacheContext, **kwargs) -> bool:
         state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
@@ -96,7 +94,8 @@ class MagCacheStrategy(DiffusionCache):
         if ctx.params.mag_ratios is None:
             return False
 
-        state.norm_ratio *= ctx.params.mag_ratios[ctx.cnt]
+        cur_ratio = ctx.params.mag_ratios[ctx.cnt]
+        state.norm_ratio *= cur_ratio
         state.consecutive_skips += 1
         state.accumulated_error += abs(1 - state.norm_ratio)
 

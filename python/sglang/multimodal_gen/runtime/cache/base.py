@@ -3,7 +3,15 @@
 Base class for diffusion model cache strategies (TeaCache, MagCache, etc.).
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
+
+if TYPE_CHECKING:
+    from sglang.multimodal_gen.runtime.cache.magcache import MagCacheState
+    from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheState
 
 
 class DiffusionCache:
@@ -16,6 +24,10 @@ class DiffusionCache:
 
     Subclasses must implement: reset, get_context, should_skip.
     maybe_cache, retrieve, and calibrate have default implementations.
+
+    Subclasses set self.state / self.state_neg to strategy-specific state
+    objects (positive and negative CFG branches respectively). state_neg is
+    None when CFG negative-branch caching is disabled.
 
     Typical forward pass usage in CachableDiT:
 
@@ -30,6 +42,10 @@ class DiffusionCache:
             else:
                 self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
     """
+
+    def __init__(self) -> None:
+        self.state: MagCacheState | TeaCacheState | None = None
+        self.state_neg: MagCacheState | TeaCacheState | None = None
 
     def reset(self) -> None:
         """Reset all state at the start of a new generation."""

@@ -12,7 +12,6 @@ from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 
 
-# TODO
 class BaseDiT(nn.Module, ABC):
     _fsdp_shard_conditions: list = []
     _compile_conditions: list = []

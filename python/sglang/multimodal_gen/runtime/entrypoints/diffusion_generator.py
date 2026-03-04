@@ -176,8 +176,6 @@ class DiffGenerator:
                 sampling_params=sampling_params,
             )
             requests.append(req)
-        ic(requests)
-
         results: list[GenerationResult] = []
         total_start_time = time.perf_counter()
 
