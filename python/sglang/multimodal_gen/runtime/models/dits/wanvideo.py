@@ -820,9 +820,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             torch.randn(1, 2, inner_dim) / inner_dim**0.5
         )
 
-        # For type checking
-
-        self.cnt = 0
         self.__post_init__()
 
         # misc
@@ -882,10 +879,10 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         current_timestep = forward_context.current_timestep
         is_cfg_negative = forward_batch.is_cfg_negative if forward_batch is not None else False
 
-        if self.cache_type is None:
+        if self.cache is None:
             self.init_cache()
-        if self.cache_type is not None and current_timestep == 0 and not is_cfg_negative:
-            self.reset_cache_state()
+        if self.cache is not None and current_timestep == 0 and not is_cfg_negative:
+            self.cache.reset()
 
         if forward_batch is not None:
             sequence_shard_enabled = (
@@ -1024,15 +1021,16 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         # 4. Transformer blocks
         # if caching is enabled, we might be able to skip the forward pass
-        should_skip_forward = self.should_skip_forward_for_cached_states(
-            timestep_proj=timestep_proj, temb=temb
+        ctx = self.cache.get_context() if self.cache is not None else None
+        should_skip_forward = (
+            ctx is not None and not self.calibrate_cache
+            and self.cache.should_skip(ctx, timestep_proj=timestep_proj, temb=temb)
         )
 
         if should_skip_forward:
-            hidden_states = self.retrieve_cached_states(hidden_states)
+            hidden_states = self.cache.retrieve(hidden_states, ctx)
         else:
-            # If caching is enabled, save the original hidden states
-            if self.cache_type:
+            if self.cache is not None:
                 original_hidden_states = hidden_states.clone()
 
             for block in self.blocks:
@@ -1040,15 +1038,11 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     hidden_states, encoder_hidden_states, timestep_proj, freqs_cis
                 )
 
-            # calibrate cache
-            if self.calibrate_cache:
-                ctx = self._get_context(calibration_mode=True)
-                self.do_calibrate_cache(ctx, hidden_states, original_hidden_states)
-            # cache states for possible future reuse
-            elif self.cache_type is not None:
-                self.maybe_cache_states(hidden_states, original_hidden_states)
-
-        self.cnt += 1
+            if self.cache is not None:
+                if self.calibrate_cache:
+                    self.cache.calibrate(hidden_states, original_hidden_states, ctx)
+                else:
+                    self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()
@@ -1085,24 +1079,5 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
 
         return output
-
-    def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
-        """Check both TeaCache and MagCache (route between strategies)."""
-
-        # if cache is not enabled or calibrating, do not skip forward pass
-        if self.cache_type is None or self.calibrate_cache:
-            return False
-
-        ctx = self._get_context()
-        if ctx is None:
-            return False
-
-        return self.should_skip_forward(ctx, **kwargs)
-
-    def do_calibrate_cache(self, **kwargs):
-        ctx = self._get_context()
-        if ctx is None:
-            raise ValueError("Context should not be None when calibrating cache")
-        self.calibrate_cache(ctx, **kwargs)
 
 EntryClass = WanTransformer3DModel

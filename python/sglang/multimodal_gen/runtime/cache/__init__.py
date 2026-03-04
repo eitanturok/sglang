@@ -17,18 +17,21 @@ from sglang.multimodal_gen.runtime.cache.cache_dit_integration import (
     enable_cache_on_transformer,
     get_scm_mask,
 )
-from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext, TeaCacheMixin, TeaCacheState
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext, MagCacheMixin, MagCacheState
+from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext, TeaCacheState, TeaCacheStrategy
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext, MagCacheState, MagCacheStrategy
+from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 
 __all__ = [
-    # TeaCache (always available)
+    # Base
+    "DiffusionCache",
+    # TeaCache
     "TeaCacheContext",
-    "TeaCacheMixin",
     "TeaCacheState",
-    # MagCache (always available)
+    "TeaCacheStrategy",
+    # MagCache
     "MagCacheContext",
-    "MagCacheMixin",
     "MagCacheState",
+    "MagCacheStrategy",
     # cache-dit integration (lazy-loaded, requires cache-dit package)
     "CacheDitConfig",
     "enable_cache_on_transformer",

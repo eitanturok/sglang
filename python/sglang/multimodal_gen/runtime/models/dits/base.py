@@ -8,13 +8,7 @@ import torch
 from torch import nn
 
 from sglang.multimodal_gen.configs.models import DiTConfig
-
-# NOTE: TeaCacheContext and TeaCacheMixin have been moved to
-# sglang.multimodal_gen.runtime.cache.teacache
-# For backwards compatibility, re-export from the new location
-from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext  # noqa: F401
-from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheMixin
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
+from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 
 
@@ -84,90 +78,78 @@ class BaseDiT(nn.Module, ABC):
         return next(self.parameters()).device
 
 
-class CachableDiT(MagCacheMixin, TeaCacheMixin, BaseDiT):
-    """
-    Intermediate base class that provides both TeaCache and MagCache optimization.
+_CFG_SUPPORTED_PREFIXES: set[str] = {"wan", "hunyuan", "zimage"}
 
-    Inherits from both TeaCacheMixin and MagCacheMixin, and routes between them
-    based on enable_teacache / enable_magcache flags.
+
+class CachableDiT(BaseDiT):
+    """
+    BaseDiT subclass that adds pluggable step-caching support (TeaCache / MagCache).
+
+    self.cache is None until init_cache() is called on the first forward pass,
+    at which point the correct DiffusionCache strategy is constructed from the
+    runtime forward_batch context.
     """
 
-    # These are required class attributes that should be overridden by concrete implementations
     _fsdp_shard_conditions = []
     param_names_mapping = {}
     reverse_param_names_mapping = {}
     lora_param_names_mapping: dict = {}
-    # Ensure these instance attributes are properly defined in subclasses
     hidden_size: int
     num_attention_heads: int
     num_channels_latents: int
-    # always supports torch_sdpa
     _supported_attention_backends: set[AttentionBackendEnum] = (
         DiTConfig()._supported_attention_backends
     )
-    cache_type: str|bool|None = None
 
     def __init__(self, config: DiTConfig, **kwargs) -> None:
         super().__init__(config, **kwargs)
+        self.cache: DiffusionCache | None = None
+        self.calibrate_cache: bool = False
 
-    def init_cache(self):
-        """
-        Initialize cache state in the forward pass because it depends on the forward batch context.
+    def init_cache(self) -> None:
+        """Construct the cache strategy from the current forward_batch context.
+
+        Called lazily on the first forward pass because sampling params
+        (teacache_params, magcache_params, num_steps) are only available then.
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
-        forward_context = get_forward_context()
-        forward_batch = forward_context.forward_batch
-        if forward_batch is None:
-            return None
+        from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
+        from sglang.multimodal_gen.runtime.cache.magcache import MagCacheStrategy
 
-        # chose which cache type to use (mutually exclusive)
-        self.enable_teacache = forward_batch.enable_teacache
-        self.enable_magcache = forward_batch.enable_magcache
-        if self.enable_magcache and self.enable_teacache:
-            raise ValueError("Both MagCache and TeaCache cannot be enabled at the same time")
-        self.cache_type = 'magcache' if self.enable_magcache else 'teacache' if self.enable_teacache else None
-        ic(self.cache_type)
+        fb = get_forward_context().forward_batch
+        if fb is None:
+            return
 
-        # Flags indicating if this model supports CFG cache separation and if we're currently in the negative CFG branch
-        self._supports_cfg_cache = self.config.prefix.lower() in self._CFG_SUPPORTED_PREFIXES
-        self.is_cfg_negative = forward_batch.is_cfg_negative
+        if fb.enable_teacache and fb.enable_magcache:
+            raise ValueError("TeaCache and MagCache cannot both be enabled")
 
-        # Flag for calibrating the cache
-        self.calibrate_cache = forward_batch.calibrate_cache
+        self.calibrate_cache = fb.calibrate_cache
+        supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
-        # Initialize the cache type
-        if self.cache_type == 'magcache':
-            self._get_context = self._get_magcache_context
-            self.do_calibrate_cache = self.calibrate_magcache
-            self.should_skip_forward = self.should_skip_forward_magcache
-            self.reset_cache_state = self.reset_magcache_state
-            self._init_magcache(forward_batch.magcache_params)
-        elif self.cache_type == 'teacache':
-            self._get_context = self._get_teacache_context
-            self.do_calibrate_cache = self.calibrate_teacache
-            self.should_skip_forward = self.should_skip_forward_teacache
-            self.reset_cache_state = self.reset_teacache_state
-            self._init_teacache()
+        if fb.enable_teacache:
+            self.cache = TeaCacheStrategy(supports_cfg_cache=supports_cfg)
+        elif fb.enable_magcache:
+            self.cache = MagCacheStrategy(params=fb.magcache_params, supports_cfg_cache=supports_cfg)
+        else:
+            self.cache = None
 
+    # todo: only used in hunyuanvideo.py; refactor and remove this method
+    def maybe_cache_states(self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor, ctx) -> None:
+        if self.cache is not None:
+            self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
 
-    def maybe_cache_states(
-        self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor
-    ) -> None:
-        """
-        Cache residual for later retrieval.
-        """
-        residual = hidden_states.squeeze(0) - original_hidden_states
-        state = self.cache_state_neg if self.is_cfg_negative else self.cache_state
-        state.previous_residual = residual
+    # todo: only used in hunyuanvideo.py; refactor and remove this method
+    def retrieve_cached_states(self, hidden_states: torch.Tensor, ctx) -> torch.Tensor:
+        return self.cache.retrieve(hidden_states, ctx)
 
-    def retrieve_cached_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Retrieve cached residual with CFG positive/negative separation."""
-        state = self.cache_state_neg if self.is_cfg_negative else self.cache_state
-        return hidden_states + state.previous_residual
-
+    # todo: only used in hunyuanvideo.py; refactor and remove this method
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
-        """Override in subclass to implement cache decision logic."""
-        return False
+        if self.cache is None or self.calibrate_cache:
+            return False
+        ctx = self.cache.get_context()
+        if ctx is None:
+            return False
+        return self.cache.should_skip(ctx, **kwargs)
 
     @classmethod
     def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:
