@@ -129,7 +129,7 @@ class CachableDiT(BaseDiT):
         if fb.enable_teacache:
             self.cache = TeaCacheStrategy(supports_cfg_cache=supports_cfg)
         elif fb.enable_magcache:
-            self.cache = MagCacheStrategy(params=fb.magcache_params, supports_cfg_cache=supports_cfg)
+            self.cache = MagCacheStrategy(supports_cfg_cache=supports_cfg)
         else:
             self.cache = None
 

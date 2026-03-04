@@ -55,8 +55,6 @@ class WanT2V_1_3B_SamplingParams(SamplingParams):
         default_factory=lambda: WanMagCacheParams(
             threshold=0.12,
             max_skip_steps=4,
-            retention_ratio=0.2,
-            use_ret_steps=True,
         )
     )
 
@@ -111,7 +109,6 @@ class WanT2V_14B_SamplingParams(SamplingParams):
         default_factory=lambda: WanMagCacheParams(
             threshold=0.06,
             max_skip_steps=3,
-            use_ret_steps=True,
         )
     )
 
@@ -155,7 +152,6 @@ class WanI2V_14B_480P_SamplingParam(WanT2V_1_3B_SamplingParams):
         default_factory=lambda: WanMagCacheParams(
             threshold=0.06,
             max_skip_steps=3,
-            use_ret_steps=True,
         )
     )
 

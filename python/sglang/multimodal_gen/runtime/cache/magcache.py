@@ -39,10 +39,10 @@ class MagCacheState:
 
 @dataclass
 class MagCacheContext:
-    """Per-step snapshot for TeaCache decisions.
+    """Per-step snapshot for MagCache decisions.
 
     cnt is the forward-call index: timestep * 2 + cfg_offset when CFG is on,
-    so boundary thresholds (ret_steps / cutoff_steps) are in the same units.
+    so min_cnt/max_cnt boundary checks are scaled accordingly.
     """
     cnt: int
     num_inference_steps: int
@@ -58,9 +58,7 @@ class MagCacheStrategy(DiffusionCache):
     magcache is selected. Owns both CFG-branch states.
     """
 
-    def __init__(self, params: "MagCacheParams", supports_cfg_cache: bool) -> None:
-        self.min_steps = int(params.num_steps * params.retention_ratio) * 2 if params.use_ret_steps else 2
-        self.max_steps = params.num_steps * 2 if params.use_ret_steps else params.num_steps * 2 - 2
+    def __init__(self, supports_cfg_cache: bool) -> None:
         self.calibration_path = None
         self.state = MagCacheState()
         self.state_neg = MagCacheState() if supports_cfg_cache else None
@@ -93,7 +91,9 @@ class MagCacheStrategy(DiffusionCache):
         assert isinstance(state, MagCacheState) and isinstance(ctx, MagCacheContext)
 
         # Never skip on boundary steps
-        if ctx.cnt < self.min_steps or ctx.cnt >= self.max_steps:
+        min_cnt = ctx.params.skip_start_step * 2 if ctx.do_cfg else ctx.params.skip_start_step
+        max_cnt = (ctx.num_inference_steps - ctx.params.skip_end_step) * 2 if ctx.do_cfg else (ctx.num_inference_steps - ctx.params.skip_end_step)
+        if ctx.cnt < min_cnt or ctx.cnt >= max_cnt:
             state.reset()
             return False
 

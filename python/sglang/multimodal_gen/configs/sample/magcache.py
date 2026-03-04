@@ -55,17 +55,16 @@ class MagCacheParams(CacheParams):
                    Lower = higher quality but slower. Higher = faster but lower quality.
         max_skip_steps: Maximum consecutive skips allowed (default 3).
                         Prevents infinite skipping even if error is low.
-        retention_ratio: Fraction of initial steps to always compute (default 0.2).
-                         First 20% of steps are important, never skip them.
+        skip_start_step: Number of denoising steps at the start where skipping is disabled.
+        skip_end_step: Number of denoising steps at the end where skipping is disabled (0 = active until last step).
     """
 
     cache_type: str = "magcache"
     threshold: float = 0.12
     max_skip_steps: int = 4
-    retention_ratio: float = 0.2
-    num_steps: int = NUM_STEPS # Hardcoded for now
+    skip_start_step: int = 10
+    skip_end_step: int = 0
     mag_ratios: list[float] | None = None
-    use_ret_steps: bool = True
 
 
 @dataclass
@@ -78,12 +77,3 @@ class WanMagCacheParams(MagCacheParams):
     ratios from T2V_13B_MAG_RATIOS.
     """
     mag_ratios: list[float] = field(default_factory=lambda: T2V_13B_MAG_RATIOS)
-
-    @property
-    def ret_steps(self) -> int:
-        """ Calculation based on retention_ratio."""
-        return int(self.num_steps * self.retention_ratio) * 2 if self.use_ret_steps else 2
-
-    def get_cutoff_steps(self, num_inference_steps: int) -> int:
-        """Cutoff steps (always compute last few steps)."""
-        return num_inference_steps * 2 if self.use_ret_steps else num_inference_steps * 2 - 2
