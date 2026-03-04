@@ -18,7 +18,7 @@ import torch
 from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 
 if TYPE_CHECKING:
-    from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
+    from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams, WanTeaCacheParams
 
 
 @dataclass
@@ -45,7 +45,7 @@ class TeaCacheContext:
     num_inference_steps: int
     do_cfg: bool
     is_cfg_negative: bool
-    params: "TeaCacheParams|None"
+    params: "TeaCacheParams|WanTeaCacheParams"
 
 
 class TeaCacheStrategy(DiffusionCache):
@@ -64,7 +64,7 @@ class TeaCacheStrategy(DiffusionCache):
         if self.state_neg is not None:
             self.state_neg.reset()
 
-    def get_context(self) -> TeaCacheContext | None:
+    def get_context(self, cnt: int) -> TeaCacheContext | None:
         from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
         forward_context = get_forward_context()
         fb = forward_context.forward_batch
@@ -73,10 +73,10 @@ class TeaCacheStrategy(DiffusionCache):
 
         do_cfg = fb.do_classifier_free_guidance
         is_neg = fb.is_cfg_negative
-        step = forward_context.current_timestep
-        cnt = step * 2 + (1 if is_neg else 0) if do_cfg else step
-        steps=fb.num_inference_steps
+        steps = fb.num_inference_steps
         params = getattr(fb.sampling_params, "teacache_params", None)
+        assert params is not None, "TeaCacheStrategy requires teacache_params in sampling_params"
+
         return TeaCacheContext(cnt=cnt, num_inference_steps=steps, do_cfg=do_cfg, is_cfg_negative=is_neg, params=params)
 
     def should_skip(self, ctx: TeaCacheContext, **kwargs) -> bool:
@@ -84,13 +84,11 @@ class TeaCacheStrategy(DiffusionCache):
         modulated_inp = kwargs["timestep_proj"] if ctx.params.use_ret_steps else kwargs["temb"]
 
         ret_steps = ctx.params.ret_steps if ctx.do_cfg else ctx.params.ret_steps // 2
-        cutoff_steps = ctx.params.get_cutoff_steps(ctx.num_inference_steps)
-        if not ctx.do_cfg:
-            cutoff_steps //= 2
+        cutoff_steps = ctx.params.get_cutoff_steps(ctx.num_inference_steps) if ctx.do_cfg else ctx.params.get_cutoff_steps(ctx.num_inference_steps) // 2
 
         # Always compute boundary steps
         if ctx.cnt < ret_steps or ctx.cnt >= cutoff_steps:
-            state.accumulated_rel_l1_distance = 0.0
+            state.reset()
             return False
 
         # No previous input yet — compute and store
@@ -111,11 +109,3 @@ class TeaCacheStrategy(DiffusionCache):
             return True
         state.accumulated_rel_l1_distance = 0.0
         return False
-
-    def maybe_cache(self, hidden_states, original_hidden_states, ctx: TeaCacheContext) -> None:
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
-        state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
-
-    def retrieve(self, hidden_states, ctx: TeaCacheContext) -> torch.Tensor:
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
-        return hidden_states + state.previous_residual

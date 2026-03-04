@@ -105,6 +105,7 @@ class CachableDiT(BaseDiT):
         super().__init__(config, **kwargs)
         self.cache: DiffusionCache | None = None
         self.calibrate_cache: bool = False
+        self.cnt: int = 0
 
     def init_cache(self) -> None:
         """Construct the cache strategy from the current forward_batch context.
@@ -146,7 +147,7 @@ class CachableDiT(BaseDiT):
     def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
         if self.cache is None or self.calibrate_cache:
             return False
-        ctx = self.cache.get_context()
+        ctx = self.cache.get_context(self.cnt)
         if ctx is None:
             return False
         return self.cache.should_skip(ctx, **kwargs)

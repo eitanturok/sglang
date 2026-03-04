@@ -4,6 +4,9 @@ import json
 import os
 from sglang.multimodal_gen.configs.sample.sampling_params import CacheParams
 
+# Magnitude ratio arrays from the reference implementation:
+# https://github.com/Zehong-Ma/MagCache/blob/df81cb181776c2c61477c08e1d21f87fda1cd938/MagCache4Wan2.1/magcache_generate.py
+
 # from https://github.com/Zehong-Ma/MagCache/blob/df81cb181776c2c61477c08e1d21f87fda1cd938/MagCache4Wan2.1/magcache_generate.py#L912
 T2V_13B_MAG_RATIOS = [
     1.0, 1.0,

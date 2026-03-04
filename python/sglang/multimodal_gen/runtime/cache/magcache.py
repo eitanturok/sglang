@@ -71,7 +71,7 @@ class MagCacheStrategy(DiffusionCache):
         if self.state_neg is not None:
             self.state_neg.reset()
 
-    def get_context(self) -> MagCacheContext | None:
+    def get_context(self, cnt: int) -> MagCacheContext | None:
         from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
         forward_context = get_forward_context()
         fb = forward_context.forward_batch
@@ -80,9 +80,8 @@ class MagCacheStrategy(DiffusionCache):
 
         do_cfg = fb.do_classifier_free_guidance
         is_neg = fb.is_cfg_negative
-        step = forward_context.current_timestep
-        cnt = step * 2 + (1 if is_neg else 0) if do_cfg else step
         params = getattr(fb.sampling_params, "magcache_params", None)
+        assert params is not None, "MagCacheStrategy requires magcache_params in sampling_params"
 
         return MagCacheContext(cnt=cnt, do_cfg=do_cfg, is_cfg_negative=is_neg, params=params)
 
@@ -94,6 +93,9 @@ class MagCacheStrategy(DiffusionCache):
             state.reset()
             return False
 
+        if ctx.params.mag_ratios is None:
+            return False
+
         state.norm_ratio *= ctx.params.mag_ratios[ctx.cnt]
         state.consecutive_skips += 1
         state.accumulated_error += abs(1 - state.norm_ratio)
@@ -103,26 +105,21 @@ class MagCacheStrategy(DiffusionCache):
         state.reset()
         return False
 
-    def maybe_cache(self, hidden_states, original_hidden_states, ctx: MagCacheContext) -> None:
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
-        state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
-
-    def retrieve(self, hidden_states, ctx: MagCacheContext) -> torch.Tensor:
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
-        return hidden_states + state.previous_residual
-
     def calibrate(self, hidden_states, original_hidden_states, ctx: MagCacheContext) -> None:
         state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
         prev = state.previous_residual
 
+        curr = hidden_states.squeeze(0) - original_hidden_states
+
         if prev is None:
             mag_ratio, mag_std, cos_dis = 1.0, 0.0, 0.0
         else:
-            curr = hidden_states.squeeze(0) - original_hidden_states
             norms = curr.norm(dim=-1) / prev.norm(dim=-1)
             mag_ratio = norms.mean().item()
             mag_std = norms.std().item()
             cos_dis = (1 - F.cosine_similarity(curr, prev, dim=-1, eps=1e-8)).mean().item()
+
+        state.previous_residual = curr
 
         if self.calibration_path is None:
             from sglang.multimodal_gen.envs import SGLANG_DIFFUSION_CACHE_ROOT

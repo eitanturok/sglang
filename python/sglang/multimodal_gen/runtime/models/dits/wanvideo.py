@@ -820,6 +820,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             torch.randn(1, 2, inner_dim) / inner_dim**0.5
         )
 
+        # For type checking
+        self.cnt = 0
         self.__post_init__()
 
         # misc
@@ -883,6 +885,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             self.init_cache()
         if self.cache is not None and current_timestep == 0 and not is_cfg_negative:
             self.cache.reset()
+            self.cnt = 0
 
         if forward_batch is not None:
             sequence_shard_enabled = (
@@ -1021,7 +1024,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         # 4. Transformer blocks
         # if caching is enabled, we might be able to skip the forward pass
-        ctx = self.cache.get_context() if self.cache is not None else None
+        ctx = self.cache.get_context(self.cnt) if self.cache is not None else None
         should_skip_forward = (
             ctx is not None and not self.calibrate_cache
             and self.cache.should_skip(ctx, timestep_proj=timestep_proj, temb=temb)
@@ -1043,6 +1046,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     self.cache.calibrate(hidden_states, original_hidden_states, ctx)
                 else:
                     self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
+        self.cnt += 1
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()

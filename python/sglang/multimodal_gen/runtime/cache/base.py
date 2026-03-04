@@ -14,12 +14,12 @@ class DiffusionCache:
     context extraction logic. CachableDiT holds a single
     `self.cache: DiffusionCache | None` and delegates all decisions here.
 
-    Subclasses must implement: reset, get_context, should_skip, maybe_cache,
-    retrieve. calibrate is optional (no-op by default).
+    Subclasses must implement: reset, get_context, should_skip.
+    maybe_cache, retrieve, and calibrate have default implementations.
 
     Typical forward pass usage in CachableDiT:
 
-        ctx = self.cache.get_context()
+        ctx = self.cache.get_context(self.cnt)
         if ctx and self.cache.should_skip(ctx, timestep_proj=..., temb=...):
             hidden_states = self.cache.retrieve(hidden_states, ctx)
         else:
@@ -35,10 +35,14 @@ class DiffusionCache:
         """Reset all state at the start of a new generation."""
         raise NotImplementedError
 
-    def get_context(self):
+    def get_context(self, cnt: int):
         """
         Read the global forward_context / forward_batch and return a
         strategy-specific context dataclass, or None to bypass caching.
+
+        cnt is the monotonically increasing forward-call index owned by the
+        model (model.cnt), incremented on every call regardless of whether
+        the forward pass was skipped.
         """
         raise NotImplementedError
 
@@ -57,11 +61,13 @@ class DiffusionCache:
         ctx,
     ) -> None:
         """Store residual after a full forward pass for future reuse."""
-        raise NotImplementedError
+        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
+        state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
 
     def retrieve(self, hidden_states: torch.Tensor, ctx) -> torch.Tensor:
         """Reconstruct output from cached residual."""
-        raise NotImplementedError
+        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
+        return hidden_states + state.previous_residual
 
     def calibrate(
         self,
