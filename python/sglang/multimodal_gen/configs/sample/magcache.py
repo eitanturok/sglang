@@ -1,38 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-from dataclasses import dataclass, field
-import json
-import os
+from dataclasses import dataclass
 from sglang.multimodal_gen.configs.sample.sampling_params import CacheParams
-
-
-def nearest_interp(data: list[float], target_len: int) -> list[float]:
-    """Simple nearest neighbor interpolation for 1D arrays."""
-    n = len(data)
-    indices = [round(i * (n - 1) / (target_len - 1)) for i in range(target_len)]
-    return [data[i] for i in indices]
-
-def get_interpolated_mag_ratios(sample_steps: int, raw_ratios: list[float]) -> list[float]:
-    """
-    Interpolates magnitude ratios to match the number of sampling steps.
-    Returns a flattened list of [cond, uncond] pairs.
-    """
-    # The original logic assumes ratios are stored as [cond, uncond, cond, uncond...]
-    # If the current total length doesn't match steps * 2, interpolate
-    if len(raw_ratios) != sample_steps * 2:
-        # Separate conditional and unconditional streams
-        mag_ratio_con = nearest_interp(raw_ratios[0::2], sample_steps)
-        mag_ratio_ucon = nearest_interp(raw_ratios[1::2], sample_steps)
-
-        # Zip them back together and flatten
-        return [v for pair in zip(mag_ratio_con, mag_ratio_ucon) for v in pair]
-    return raw_ratios
-
-
-def load_mag_ratios(jsonl_path: str) -> list[float]:
-    """Read calibration JSONL and return a list of mag ratios indexed by cnt."""
-    records = [json.loads(l) for l in open(jsonl_path) if l.strip()]
-    records.sort(key=lambda r: r["cnt"])
-    return [r["mag_ratio"] for r in records]
 
 
 @dataclass
