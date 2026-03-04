@@ -10,16 +10,18 @@ from sglang.multimodal_gen.configs.sample.sampling_params import CacheParams
 class TeaCacheParams(CacheParams):
     cache_type: str = "teacache"
     teacache_thresh: float = 0.0
+    skip_start_step: int = 5
+    skip_end_step: int = 0
     coefficients: list[float] = field(default_factory=list)
-
 
 @dataclass
 class WanTeaCacheParams(CacheParams):
-    # Unfortunately, TeaCache is very different for Wan than other models
-    cache_type: str = "teacache"
     # Default threshold and coefficients are for Wan T2V 1.3B (use_ret_steps=True).
     # For other Wan variants, override these values via --teacache-params.
+    cache_type: str = "teacache"
     teacache_thresh: float = 0.08
+    skip_start_step: int = 5
+    skip_end_step: int = 0
     use_ret_steps: bool = True
     ret_steps_coeffs: list[float] = field(
         default_factory=lambda: [
@@ -46,16 +48,3 @@ class WanTeaCacheParams(CacheParams):
             return self.ret_steps_coeffs
         else:
             return self.non_ret_steps_coeffs
-
-    @property
-    def ret_steps(self) -> int:
-        if self.use_ret_steps:
-            return 5 * 2
-        else:
-            return 1 * 2
-
-    def get_cutoff_steps(self, num_inference_steps: int) -> int:
-        if self.use_ret_steps:
-            return num_inference_steps * 2
-        else:
-            return num_inference_steps * 2 - 2

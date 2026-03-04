@@ -10,9 +10,6 @@ import torch
 import torch.nn as nn
 
 from sglang.multimodal_gen.configs.models.dits import WanVideoConfig
-from sglang.multimodal_gen.configs.sample.wan import WanTeaCacheParams
-from sglang.multimodal_gen.configs.sample.magcache import WanMagCacheParams
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext
 from sglang.multimodal_gen.runtime.distributed import (
     divide,
     get_sp_group,

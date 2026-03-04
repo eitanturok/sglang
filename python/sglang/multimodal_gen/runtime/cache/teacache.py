@@ -39,7 +39,7 @@ class TeaCacheContext:
     """Per-step snapshot for TeaCache decisions.
 
     cnt is the forward-call index: timestep * 2 + cfg_offset when CFG is on,
-    so boundary thresholds (ret_steps / cutoff_steps) are in the same units.
+    so min_cnt/max_cnt boundary checks are scaled accordingly.
     """
     cnt: int
     num_inference_steps: int
@@ -84,10 +84,10 @@ class TeaCacheStrategy(DiffusionCache):
         state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
         assert isinstance(state, TeaCacheState) and isinstance(ctx, TeaCacheContext)
 
-        # Cannot skip on on boundary steps
-        min_steps = ctx.params.ret_steps if ctx.do_cfg else ctx.params.ret_steps // 2
-        max_steps = ctx.params.get_cutoff_steps(ctx.num_inference_steps) if ctx.do_cfg else ctx.params.get_cutoff_steps(ctx.num_inference_steps) // 2
-        if ctx.cnt < min_steps or ctx.cnt >= max_steps:
+        # Cannot skip on boundary steps
+        min_cnt = ctx.params.skip_start_step * 2 if ctx.do_cfg else ctx.params.skip_start_step
+        max_cnt = (ctx.num_inference_steps - ctx.params.skip_end_step) * 2 if ctx.do_cfg else (ctx.num_inference_steps - ctx.params.skip_end_step)
+        if ctx.cnt < min_cnt or ctx.cnt >= max_cnt:
             state.reset()
             return False
 
