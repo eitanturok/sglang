@@ -601,6 +601,12 @@ class SamplingParams:
                 "Fields map directly to MagCacheParams dataclass fields."
             ),
         )
+        parser.add_argument(
+            "--calibrate-cache",
+            action="store_true",
+            default=SamplingParams.calibrate_cache,
+            help="Run in calibration mode: collect magnitude ratio statistics instead of skipping steps.",
+        )
 
         # profiling
         parser.add_argument(
