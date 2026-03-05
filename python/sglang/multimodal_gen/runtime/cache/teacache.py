@@ -189,7 +189,7 @@ class TeaCacheStrategy(DiffusionCache):
         # Accumulate relative L1 distance
         diff = modulated_inp - state.previous_modulated_input
         rel_l1 = (
-            (diff.abs().mean() / state.previous_modulated_input.abs().mean())
+            (diff.abs().mean() / (state.previous_modulated_input.abs().mean() + 1e-8))
             .cpu()
             .item()
         )
