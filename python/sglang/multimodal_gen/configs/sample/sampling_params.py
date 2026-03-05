@@ -146,6 +146,7 @@ class SamplingParams:
 
     # TeaCache parameters
     enable_teacache: bool = False
+    calibrate_cache: bool = False
 
     # Profiling
     profile: bool = False
@@ -593,6 +594,12 @@ class SamplingParams:
             "--enable-teacache",
             action="store_true",
             default=SamplingParams.enable_teacache,
+        )
+        parser.add_argument(
+            "--calibrate-cache",
+            action="store_true",
+            default=SamplingParams.calibrate_cache,
+            help="Run in calibration mode: collect magnitude ratio statistics instead of skipping steps.",
         )
 
         # profiling

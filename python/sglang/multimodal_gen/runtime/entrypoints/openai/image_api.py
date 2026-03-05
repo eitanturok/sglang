@@ -129,6 +129,7 @@ async def generations(
             true_cfg_scale=request.true_cfg_scale,
             negative_prompt=request.negative_prompt,
             enable_teacache=request.enable_teacache,
+            calibrate_cache=request.calibrate_cache,
             output_compression=request.output_compression,
             output_quality=request.output_quality,
         )
@@ -205,6 +206,7 @@ async def edits(
     output_quality: Optional[str] = Form("default"),
     output_compression: Optional[int] = Form(None),
     enable_teacache: Optional[bool] = Form(False),
+    calibrate_cache: Optional[bool] = Form(False),
     num_frames: int = Form(1),
 ):
     request_id = generate_request_id()
@@ -257,6 +259,7 @@ async def edits(
             true_cfg_scale=true_cfg_scale,
             num_inference_steps=num_inference_steps,
             enable_teacache=enable_teacache,
+            calibrate_cache=calibrate_cache,
             num_frames=num_frames,
             output_compression=output_compression,
             output_quality=output_quality,
