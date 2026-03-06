@@ -881,8 +881,10 @@ class WanTransformer3DModel(MagCacheMixin, CachableDiT, OffloadableDiTMixin):
             if magcache_ctx.is_calibration and self.cnt == 0:
                 logger.info("🔧 MagCache: Calibration mode - collecting residuals")
             elif not magcache_ctx.is_calibration and self.cnt == 0:
-                logger.info(f"⚡ MagCache: Active (threshold={magcache_ctx.skip_threshold}, "
-                           f"steps={magcache_ctx.num_inference_steps})")
+                logger.info(
+                    f"⚡ MagCache: Active (threshold={magcache_ctx.skip_threshold}, "
+                    f"steps={magcache_ctx.num_inference_steps})"
+                )
         else:
             magcache_ctx = None
 
@@ -910,7 +912,9 @@ class WanTransformer3DModel(MagCacheMixin, CachableDiT, OffloadableDiTMixin):
                 self.maybe_cache_states(hidden_states, original_hidden_states)
             elif magcache_ctx is not None:
                 # MagCache: cache residual for both calibration and inference
-                MagCacheMixin.maybe_cache_states(self, hidden_states, original_hidden_states)
+                MagCacheMixin.maybe_cache_states(
+                    self, hidden_states, original_hidden_states
+                )
 
         self.cnt += 1
         # 5. Output norm, projection & unpatchify

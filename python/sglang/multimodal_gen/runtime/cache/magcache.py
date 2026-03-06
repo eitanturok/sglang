@@ -204,7 +204,10 @@ class MagCacheMixin:
         )
 
     def _should_skip_using_magnitude_ratio(
-        self, current_timestep: int, magnitude_ratios: list[float], skip_threshold: float
+        self,
+        current_timestep: int,
+        magnitude_ratios: list[float],
+        skip_threshold: float,
     ) -> bool:
         """
         Decide whether to skip based on pre-computed magnitude ratio.

@@ -113,7 +113,9 @@ class MagCacheCalibrator:
         # For now, we document that the caller should use the engine's generate method
         # after calling this setup. This is a helper to prepare the model state.
 
-        print(f"Running calibration with {sampling_params.num_inference_steps} steps...")
+        print(
+            f"Running calibration with {sampling_params.num_inference_steps} steps..."
+        )
         print(
             "Note: After this method returns, call engine.generate(sampling_params) "
             "to run the actual generation and collect residuals."
@@ -180,9 +182,7 @@ class MagCacheCalibrator:
 
         return model._magcache_finalize_calibration()
 
-    def _compute_magnitude_ratios(
-        self, residuals: list[torch.Tensor]
-    ) -> list[float]:
+    def _compute_magnitude_ratios(self, residuals: list[torch.Tensor]) -> list[float]:
         """
         Compute magnitude ratios from collected residuals.
 
