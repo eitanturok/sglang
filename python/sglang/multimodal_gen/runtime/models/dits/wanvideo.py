@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from sglang.multimodal_gen.configs.models.dits import WanVideoConfig
 from sglang.multimodal_gen.configs.sample.wan import WanTeaCacheParams
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
 from sglang.multimodal_gen.runtime.distributed import (
     divide,
     get_sp_world_size,
@@ -43,7 +44,6 @@ from sglang.multimodal_gen.runtime.layers.visual_embedding import (
     PatchEmbed,
     TimestepEmbedder,
 )
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
 from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
 from sglang.multimodal_gen.runtime.models.dits.base import CachableDiT
 from sglang.multimodal_gen.runtime.platforms import (

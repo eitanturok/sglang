@@ -9,16 +9,15 @@ from torch import nn
 
 from sglang.multimodal_gen.configs.models import DiTConfig
 
+# MagCache support
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext  # noqa: F401
+from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
+
 # NOTE: TeaCacheContext and TeaCacheMixin have been moved to
 # sglang.multimodal_gen.runtime.cache.teacache
 # For backwards compatibility, re-export from the new location
 from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext  # noqa: F401
 from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheMixin
-
-# MagCache support
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext  # noqa: F401
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheMixin
-
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 
 

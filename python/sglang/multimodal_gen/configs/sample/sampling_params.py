@@ -14,7 +14,10 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
 
 from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
 from sglang.multimodal_gen.utils import StoreBoolean

@@ -6,13 +6,15 @@ This script directly builds the pipeline to access the model for calibration,
 bypassing the client-server architecture of DiffGenerator.
 """
 import sys
+
 sys.path.insert(0, '/home/ubuntu/sglang/python')
 
 import torch
-from sglang.multimodal_gen.runtime.server_args import ServerArgs
-from sglang.multimodal_gen.runtime.pipelines_core import build_pipeline
+
 from sglang.multimodal_gen.configs.sample import SamplingParams
 from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
+from sglang.multimodal_gen.runtime.pipelines_core import build_pipeline
+from sglang.multimodal_gen.runtime.server_args import ServerArgs
 from sglang.multimodal_gen.runtime.utils.magcache_calibration import MagCacheCalibrator
 
 # Clear CUDA cache before starting
