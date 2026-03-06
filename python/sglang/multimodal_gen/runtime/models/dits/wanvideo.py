@@ -869,7 +869,9 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         forward_context = get_forward_context()
         forward_batch = forward_context.forward_batch
         current_timestep = forward_context.current_timestep
-        is_cfg_negative = forward_batch.is_cfg_negative if forward_batch is not None else False
+        is_cfg_negative = (
+            forward_batch.is_cfg_negative if forward_batch is not None else False
+        )
 
         if self.cache is None:
             self.init_cache()
@@ -1016,7 +1018,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         # if caching is enabled, we might be able to skip the forward pass
         ctx = self.cache.get_context(self.cnt) if self.cache is not None else None
         should_skip_forward = (
-            ctx is not None and not self.calibrate_cache
+            ctx is not None
+            and not self.calibrate_cache
             and self.cache.should_skip(ctx, timestep_proj=timestep_proj, temb=temb)
         )
 
@@ -1073,5 +1076,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
 
         return output
+
 
 EntryClass = WanTransformer3DModel

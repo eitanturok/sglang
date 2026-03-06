@@ -77,12 +77,20 @@ class DiffusionCache:
         ctx,
     ) -> None:
         """Store residual after a full forward pass for future reuse."""
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
+        state = (
+            self.state_neg
+            if (ctx.is_cfg_negative and self.state_neg is not None)
+            else self.state
+        )
         state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
 
     def retrieve(self, hidden_states: torch.Tensor, ctx) -> torch.Tensor:
         """Reconstruct output from cached residual."""
-        state = self.state_neg if (ctx.is_cfg_negative and self.state_neg is not None) else self.state
+        state = (
+            self.state_neg
+            if (ctx.is_cfg_negative and self.state_neg is not None)
+            else self.state
+        )
         return hidden_states + state.previous_residual
 
     def calibrate(

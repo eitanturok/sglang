@@ -136,7 +136,9 @@ class CachableDiT(BaseDiT):
             self.cache = None
 
     # todo: only used in hunyuanvideo.py; refactor and remove this method
-    def maybe_cache_states(self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor, ctx) -> None:
+    def maybe_cache_states(
+        self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor, ctx
+    ) -> None:
         if self.cache is not None:
             self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
 

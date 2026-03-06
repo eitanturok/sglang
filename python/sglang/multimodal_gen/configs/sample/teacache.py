@@ -14,6 +14,7 @@ class TeaCacheParams(CacheParams):
     skip_end_step: int = 0
     coefficients: list[float] = field(default_factory=list)
 
+
 @dataclass
 class WanTeaCacheParams(CacheParams):
     # Default threshold and coefficients are for Wan T2V 1.3B (use_ret_steps=True).
