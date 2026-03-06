@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from dataclasses import dataclass, field
 
+from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
 from sglang.multimodal_gen.configs.sample.sampling_params import SamplingParams
 from sglang.multimodal_gen.configs.sample.teacache import WanTeaCacheParams
-from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
 
 # Magnitude ratio arrays from the reference implementation:
 # https://github.com/Zehong-Ma/MagCache/blob/df81cb181776c2c61477c08e1d21f87fda1cd938/MagCache4Wan2.1/magcache_generate.py

@@ -11,15 +11,23 @@ diffusion transformer (DiT) inference:
 
 """
 
+from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 from sglang.multimodal_gen.runtime.cache.cache_dit_integration import (
     CacheDitConfig,
     enable_cache_on_dual_transformer,
     enable_cache_on_transformer,
     get_scm_mask,
 )
-from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheContext, TeaCacheState, TeaCacheStrategy
-from sglang.multimodal_gen.runtime.cache.magcache import MagCacheContext, MagCacheState, MagCacheStrategy
-from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
+from sglang.multimodal_gen.runtime.cache.magcache import (
+    MagCacheContext,
+    MagCacheState,
+    MagCacheStrategy,
+)
+from sglang.multimodal_gen.runtime.cache.teacache import (
+    TeaCacheContext,
+    TeaCacheState,
+    TeaCacheStrategy,
+)
 
 __all__ = [
     # Base

@@ -21,10 +21,6 @@ import PIL.Image
 import torch
 
 from sglang.multimodal_gen.configs.sample.sampling_params import SamplingParams
-from sglang.multimodal_gen.configs.sample.teacache import (
-    TeaCacheParams,
-    WanTeaCacheParams,
-)
 from sglang.multimodal_gen.runtime.server_args import (
     ServerArgs,
     _sanitize_for_logging,

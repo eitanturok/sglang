@@ -112,9 +112,11 @@ class CachableDiT(BaseDiT):
         Called lazily on the first forward pass because sampling params
         (teacache_params, magcache_params, num_steps) are only available then.
         """
-        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
-        from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
         from sglang.multimodal_gen.runtime.cache.magcache import MagCacheStrategy
+        from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
+        from sglang.multimodal_gen.runtime.managers.forward_context import (
+            get_forward_context,
+        )
 
         fb = get_forward_context().forward_batch
         if fb is None:

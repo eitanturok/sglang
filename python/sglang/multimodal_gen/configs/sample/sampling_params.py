@@ -12,7 +12,7 @@ import re
 import time
 import unicodedata
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
@@ -22,9 +22,9 @@ from sglang.multimodal_gen.utils import StoreBoolean, expand_path_fields
 logger = init_logger(__name__)
 
 if TYPE_CHECKING:
-    from sglang.multimodal_gen.runtime.server_args import ServerArgs
     from sglang.multimodal_gen.configs.sample.magcache import MagCacheParams
     from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
+    from sglang.multimodal_gen.runtime.server_args import ServerArgs
 
 
 def _json_safe(obj: Any):

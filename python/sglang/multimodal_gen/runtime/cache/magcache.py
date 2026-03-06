@@ -72,7 +72,9 @@ class MagCacheStrategy(DiffusionCache):
             self.state_neg.previous_residual = None
 
     def get_context(self, cnt: int) -> MagCacheContext | None:
-        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
+        from sglang.multimodal_gen.runtime.managers.forward_context import (
+            get_forward_context,
+        )
         forward_context = get_forward_context()
         fb = forward_context.forward_batch
         if fb is None:

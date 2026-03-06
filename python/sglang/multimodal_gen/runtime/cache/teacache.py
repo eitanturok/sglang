@@ -18,7 +18,10 @@ import torch
 from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 
 if TYPE_CHECKING:
-    from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams, WanTeaCacheParams
+    from sglang.multimodal_gen.configs.sample.teacache import (
+        TeaCacheParams,
+        WanTeaCacheParams,
+    )
 
 
 @dataclass
@@ -66,7 +69,9 @@ class TeaCacheStrategy(DiffusionCache):
             self.state_neg.reset()
 
     def get_context(self, cnt: int) -> TeaCacheContext | None:
-        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
+        from sglang.multimodal_gen.runtime.managers.forward_context import (
+            get_forward_context,
+        )
         forward_context = get_forward_context()
         fb = forward_context.forward_batch
         if fb is None:
