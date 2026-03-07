@@ -32,18 +32,51 @@ if TYPE_CHECKING:
     )
 
 
+def _rescale_distance_tensor(coefficients: list[float], x: torch.Tensor) -> torch.Tensor:
+    """Polynomial rescaling using tensor operations (torch.compile friendly)."""
+    c = coefficients
+    return c[0] * x**4 + c[1] * x**3 + c[2] * x**2 + c[3] * x + c[4]
+
+
+def _compute_rel_l1_distance_tensor(current: torch.Tensor, previous: torch.Tensor) -> torch.Tensor:
+    """Compute relative L1 distance as a tensor (torch.compile friendly)."""
+    prev_mean = previous.abs().mean()
+    curr_diff_mean = (current - previous).abs().mean()
+
+    # Use torch.where for conditional logic instead of Python if
+    rel_distance = torch.where(
+        prev_mean > 1e-9,
+        curr_diff_mean / prev_mean,
+        torch.where(
+            current.abs().mean() < 1e-9,
+            torch.zeros(1, device=current.device, dtype=current.dtype),
+            torch.full((1,), float("inf"), device=current.device, dtype=current.dtype),
+        ),
+    )
+    return rel_distance.squeeze()
+
+
 @dataclass
 class TeaCacheState:
     """Per-CFG-branch state for TeaCache."""
 
     previous_modulated_input: torch.Tensor | None = field(default=None, repr=False)
     previous_residual: torch.Tensor | None = field(default=None, repr=False)
-    accumulated_rel_l1_distance: float = 0.0
+    accumulated_rel_l1_distance: torch.Tensor | None = field(default=None, repr=False)
+    cnt: int = 0
 
     def reset(self) -> None:
         self.previous_modulated_input = None
         self.previous_residual = None
-        self.accumulated_rel_l1_distance = 0.0
+        self.accumulated_rel_l1_distance = None
+        self.cnt = 0
+
+    def update_state(self, residual, modulated_inp, accumulated_rel_l1_distance):
+        """Update cache state after full computation."""
+        self.previous_residual = residual
+        self.previous_modulated_input = modulated_inp
+        self.accumulated_rel_l1_distance = accumulated_rel_l1_distance
+        self.cnt += 1
 
 
 @dataclass
@@ -175,11 +208,20 @@ class TeaCacheStrategy(DiffusionCache):
             state.reset()
             return False
 
+
+        is_first_step = state.cnt == 0
+        is_last_step = state.num_steps > 0 and state.cnt == state.num_steps - 1
+        missing_state = state.accumulated_rel_l1_distance is None
+
         modulated_inp = (
             kwargs["timestep_proj"]
             if getattr(ctx.params, "use_ret_steps", None)
             else kwargs["temb"]
         )
+
+        if is_first_step or is_last_step or missing_state:
+            state.accumulated_rel_l1_distance = torch.zeros(1, device=modulated_input.device, dtype=modulated_input.dtype)
+            return True
 
         # Cannot skip when have no previous input
         if state.previous_modulated_input is None:
@@ -193,9 +235,9 @@ class TeaCacheStrategy(DiffusionCache):
             .cpu()
             .item()
         )
-        accumulated = state.accumulated_rel_l1_distance + np.poly1d(
-            ctx.params.coefficients
-        )(rel_l1)
+
+        rescaled = _rescale_distance_tensor(ctx.params.coefficients, rel_l1)
+        accumulated = state.accumulated_rel_l1_distance + rescaled
 
         state.accumulated_rel_l1_distance = accumulated
         state.previous_modulated_input = modulated_inp.clone()
