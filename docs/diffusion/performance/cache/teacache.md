@@ -50,7 +50,7 @@ TeaCache is configured via `TeaCacheParams` in the sampling parameters:
 from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
 
 params = TeaCacheParams(
-    teacache_thresh=0.1,           # Threshold for accumulated L1 distance
+    rel_l1_thresh=0.1,           # Threshold for accumulated L1 distance
     coefficients=[1.0, 0.0, 0.0],  # Polynomial coefficients for L1 rescaling
 )
 ```
@@ -59,7 +59,7 @@ params = TeaCacheParams(
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `teacache_thresh` | float | Threshold for accumulated L1 distance. Lower = more caching, faster but potentially lower quality |
+| `rel_l1_thresh` | float | Threshold for accumulated L1 distance. Lower = more caching, faster but potentially lower quality |
 | `coefficients` | list[float] | Polynomial coefficients for L1 rescaling. Model-specific tuning |
 
 ### Model-Specific Configurations

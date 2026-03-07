@@ -955,4 +955,4 @@ class SamplingParams:
 
 @dataclass
 class CacheParams:
-    cache_type: str = "none"
+    pass

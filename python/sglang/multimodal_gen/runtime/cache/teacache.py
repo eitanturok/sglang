@@ -59,7 +59,7 @@ class TeaCacheContext:
         num_inference_steps: Total number of inference steps.
         do_cfg: Whether classifier-free guidance is enabled.
         is_cfg_negative: True if currently processing negative CFG branch.
-        teacache_thresh: Threshold for accumulated L1 distance.
+        rel_l1_thresh: Threshold for accumulated L1 distance.
         coefficients: Polynomial coefficients for L1 rescaling.
         teacache_params: Full TeaCacheParams for model-specific access.
     """
@@ -200,7 +200,7 @@ class TeaCacheStrategy(DiffusionCache):
         state.accumulated_rel_l1_distance = accumulated
         state.previous_modulated_input = modulated_inp.clone()
 
-        if accumulated < ctx.params.teacache_thresh:
+        if accumulated < ctx.params.rel_l1_thresh:
             return True
         state.reset()
         return False
