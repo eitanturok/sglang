@@ -134,6 +134,9 @@ async def generations(
             calibrate_cache=request.calibrate_cache,
             output_compression=request.output_compression,
             output_quality=request.output_quality,
+            enable_upscaling=request.enable_upscaling,
+            upscaling_model_path=request.upscaling_model_path,
+            upscaling_scale=request.upscaling_scale,
         )
         batch = prepare_request(
             server_args=server_args,
@@ -209,6 +212,9 @@ async def edits(
     output_compression: Optional[int] = Form(None),
     enable_teacache: Optional[bool] = Form(False),
     calibrate_cache: Optional[bool] = Form(False),
+    enable_upscaling: Optional[bool] = Form(False),
+    upscaling_model_path: Optional[str] = Form(None),
+    upscaling_scale: Optional[int] = Form(4),
     num_frames: int = Form(1),
 ):
     request_id = generate_request_id()
@@ -265,6 +271,9 @@ async def edits(
             num_frames=num_frames,
             output_compression=output_compression,
             output_quality=output_quality,
+            enable_upscaling=enable_upscaling,
+            upscaling_model_path=upscaling_model_path,
+            upscaling_scale=upscaling_scale,
         )
         batch = prepare_request(
             server_args=server_args,
