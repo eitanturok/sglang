@@ -4,7 +4,19 @@
 from dataclasses import dataclass, field
 
 from sglang.multimodal_gen.configs.sample.sampling_params import SamplingParams
-from sglang.multimodal_gen.configs.sample.teacache import WanTeaCacheParams
+from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
+
+
+def _wan_1_3b_coefficients(p: TeaCacheParams) -> list[float]:
+    if p.use_ret_steps:
+        return [-5.21862437e04, 9.23041404e03, -5.28275948e02, 1.36987616e01, -4.99875664e-02]
+    return [2.39676752e03, -1.31110545e03, 2.01331979e02, -8.29855975e00, 1.37887774e-01]
+
+
+def _wan_14b_coefficients(p: TeaCacheParams) -> list[float]:
+    if p.use_ret_steps:
+        return [-3.03318725e05, 4.90537029e04, -2.65530556e03, 5.87365115e01, -3.15583525e-01]
+    return [-5784.54975374, 5449.50911966, -1811.16591783, 256.27178429, -13.02252404]
 
 
 @dataclass
@@ -30,23 +42,11 @@ class WanT2V_1_3B_SamplingParams(SamplingParams):
         ]
     )
 
-    teacache_params: WanTeaCacheParams = field(
-        default_factory=lambda: WanTeaCacheParams(
+    teacache_params: TeaCacheParams = field(
+        default_factory=lambda: TeaCacheParams(
             rel_l1_thresh=0.08,
-            ret_steps_coeffs=[
-                -5.21862437e04,
-                9.23041404e03,
-                -5.28275948e02,
-                1.36987616e01,
-                -4.99875664e-02,
-            ],
-            non_ret_steps_coeffs=[
-                2.39676752e03,
-                -1.31110545e03,
-                2.01331979e02,
-                -8.29855975e00,
-                1.37887774e-01,
-            ],
+            use_ret_steps=True,
+            coefficients_callback=_wan_1_3b_coefficients,
         )
     )
 
@@ -76,24 +76,11 @@ class WanT2V_14B_SamplingParams(SamplingParams):
         ]
     )
 
-    teacache_params: WanTeaCacheParams = field(
-        default_factory=lambda: WanTeaCacheParams(
+    teacache_params: TeaCacheParams = field(
+        default_factory=lambda: TeaCacheParams(
             rel_l1_thresh=0.20,
             use_ret_steps=False,
-            ret_steps_coeffs=[
-                -3.03318725e05,
-                4.90537029e04,
-                -2.65530556e03,
-                5.87365115e01,
-                -3.15583525e-01,
-            ],
-            non_ret_steps_coeffs=[
-                -5784.54975374,
-                5449.50911966,
-                -1811.16591783,
-                256.27178429,
-                -13.02252404,
-            ],
+            coefficients_callback=_wan_14b_coefficients,
         )
     )
 
@@ -113,23 +100,11 @@ class WanI2V_14B_480P_SamplingParam(WanT2V_1_3B_SamplingParams):
         ]
     )
 
-    teacache_params: WanTeaCacheParams = field(
-        default_factory=lambda: WanTeaCacheParams(
+    teacache_params: TeaCacheParams = field(
+        default_factory=lambda: TeaCacheParams(
             rel_l1_thresh=0.26,
-            ret_steps_coeffs=[
-                -3.03318725e05,
-                4.90537029e04,
-                -2.65530556e03,
-                5.87365115e01,
-                -3.15583525e-01,
-            ],
-            non_ret_steps_coeffs=[
-                -5784.54975374,
-                5449.50911966,
-                -1811.16591783,
-                256.27178429,
-                -13.02252404,
-            ],
+            use_ret_steps=True,
+            coefficients_callback=_wan_14b_coefficients,
         )
     )
 
@@ -151,23 +126,11 @@ class WanI2V_14B_720P_SamplingParam(WanT2V_14B_SamplingParams):
         ]
     )
 
-    teacache_params: WanTeaCacheParams = field(
-        default_factory=lambda: WanTeaCacheParams(
+    teacache_params: TeaCacheParams = field(
+        default_factory=lambda: TeaCacheParams(
             rel_l1_thresh=0.3,
-            ret_steps_coeffs=[
-                -3.03318725e05,
-                4.90537029e04,
-                -2.65530556e03,
-                5.87365115e01,
-                -3.15583525e-01,
-            ],
-            non_ret_steps_coeffs=[
-                -5784.54975374,
-                5449.50911966,
-                -1811.16591783,
-                256.27178429,
-                -13.02252404,
-            ],
+            use_ret_steps=True,
+            coefficients_callback=_wan_14b_coefficients,
         )
     )
 

@@ -958,16 +958,11 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         forward_context = get_forward_context()
         forward_batch = forward_context.forward_batch
-        current_timestep = forward_context.current_timestep
-        is_cfg_negative = (
-            forward_batch.is_cfg_negative if forward_batch is not None else False
-        )
 
         if self.cache is None:
             self.init_cache()
-        if self.cache and current_timestep == 0 and not is_cfg_negative:
-            self.cache.reset()
-            self.cnt = 0
+        if self.cache:
+            self.cache.maybe_reset(forward_context.current_timestep)
 
         if forward_batch is not None:
             sequence_shard_enabled = (
@@ -1106,15 +1101,15 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         # 4. Transformer blocks
         # if caching is enabled, we might be able to skip the forward pass
-        ctx = self.cache.get_context(self.cnt) if self.cache else None
         should_skip_forward = (
             self.cache
             and not self.calibrate_cache
-            and self.cache.should_skip(ctx, timestep_proj=timestep_proj, temb=temb)
+            and self.cache.should_skip(timestep_proj, temb, forward_batch.current_timestep)
         )
+        ic(should_skip_forward)
 
         if should_skip_forward:
-            hidden_states = self.cache.retrieve(hidden_states, ctx)
+            hidden_states = self.cache.read(hidden_states)
         else:
             if self.cache:
                 original_hidden_states = hidden_states.clone()
@@ -1124,12 +1119,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     hidden_states, encoder_hidden_states, timestep_proj, freqs_cis
                 )
 
-            if self.cache:
-                if self.calibrate_cache:
-                    self.cache.calibrate(hidden_states, original_hidden_states, ctx)
-                else:
-                    self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
-        self.cnt += 1
+            if self.cache and not self.calibrate_cache:
+                self.cache.write(hidden_states, original_hidden_states, timestep_proj, temb)
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()

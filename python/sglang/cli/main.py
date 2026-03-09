@@ -10,6 +10,8 @@ def version(args, extra_argv):
 
 
 def main():
+    from icecream import install
+    install()
     parser = argparse.ArgumentParser()
 
     # complex sub commands

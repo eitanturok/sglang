@@ -10,6 +10,9 @@ from torch import nn
 from sglang.multimodal_gen.configs.models import DiTConfig
 from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
+from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
+
+logger = init_logger(__name__)
 
 
 class BaseDiT(nn.Module, ABC):
@@ -115,19 +118,17 @@ class CachableDiT(BaseDiT):
                 - DiffusionCache: an active cache strategy (e.g. TeaCacheStrategy).
             calibrate_cache: When True, run every forward pass to calibrate
                 the values needed for future caching.
-            cnt: Forward-pass counter incremented each step; used by the cache
-                to track position within the denoising schedule.
         """
         super().__init__(config, **kwargs)
         self.cache: DiffusionCache | None | bool = None
         self.calibrate_cache: bool = False
-        self.cnt: int = 0
 
     def init_cache(self) -> None:
         """Construct the cache strategy from the current forward_batch context.
 
         Called lazily on the first forward pass because sampling params
-        (e.g. teacache_params, magcache_params, num_inference_steps) are only available then.
+        (e.g. teacache_params, num_inference_steps) are only available then.
+        This is the single place that reads from the global forward_context.
         """
         from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
         from sglang.multimodal_gen.runtime.managers.forward_context import (
@@ -138,33 +139,18 @@ class CachableDiT(BaseDiT):
         if fb is None:
             return
 
-        self.calibrate_cache = fb.calibrate_cache
         supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
         if fb.enable_teacache:
-            self.cache = TeaCacheStrategy(supports_cfg_cache=supports_cfg)
+            self.cache = TeaCacheStrategy(supports_cfg)
         else:
             self.cache = False
 
-    # todo: only used in hunyuanvideo.py; remove this method
-    def maybe_cache_states(
-        self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor, ctx
-    ) -> None:
-        if self.cache is not None:
-            self.cache.maybe_cache(hidden_states, original_hidden_states, ctx)
-
-    # todo: only used in hunyuanvideo.py; remove this method
-    def retrieve_cached_states(self, hidden_states: torch.Tensor, ctx) -> torch.Tensor:
-        return self.cache.retrieve(hidden_states, ctx)
-
-    # todo: only used in hunyuanvideo.py; remove this method
-    def should_skip_forward_for_cached_states(self, **kwargs) -> bool:
-        if self.cache is None or self.calibrate_cache:
-            return False
-        ctx = self.cache.get_context(self.cnt)
-        if ctx is None:
-            return False
-        return self.cache.should_skip(ctx, **kwargs)
+        if fb.calibrate_cache:
+            if self.cache:
+                self.calibrate_cache = fb.calibrate_cache
+            else:
+                logger.warning("Calibrate cache is set to True but no cache is defined.")
 
     @classmethod
     def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:

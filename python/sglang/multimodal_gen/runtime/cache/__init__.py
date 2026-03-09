@@ -18,7 +18,6 @@ from sglang.multimodal_gen.runtime.cache.cache_dit_integration import (
     get_scm_mask,
 )
 from sglang.multimodal_gen.runtime.cache.teacache import (
-    TeaCacheContext,
     TeaCacheState,
     TeaCacheStrategy,
 )
@@ -27,7 +26,6 @@ __all__ = [
     # Base
     "DiffusionCache",
     # TeaCache (always available)
-    "TeaCacheContext",
     "TeaCacheState",
     "TeaCacheStrategy",
     # cache-dit integration (lazy-loaded, requires cache-dit package)
