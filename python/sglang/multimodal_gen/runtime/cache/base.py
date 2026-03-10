@@ -5,27 +5,29 @@ import torch
 
 
 class DiffusionCache(ABC):
-    """Base class for diffusion timestep-caching strategies.
+    """Base class for managing diffusion timestep caching.
 
-    Each timestep caching technique must implement `maybe_reset`,
-    `should_skip`, `write`, `read`, and optionally `calibrate`.
+    Subclasses define specific strategies for deciding when to skip
+    computation and how to store/retrieve hidden states.
     """
 
     @abstractmethod
     def maybe_reset(self, **kwargs) -> None:
-        """Clear the cached state for a new generation.
+        """Resets the internal cache state for a new generation sequence.
 
         Args:
-            **kwargs: Keyword args.
+            **kwargs: Additional parameters that may be helpful.
         """
 
     @abstractmethod
     def should_skip(self, **kwargs) -> bool:
-        """Decide whether to skip this timestep pass.
+        """Determines if the current timestep computation can be skipped.
 
         Args:
-            curr_step: Current diffusion timestep index.
-            **kwargs: Keyword args.
+            **kwargs: Additional parameters that may be helpful.
+
+        Returns:
+            bool: True if the timestep should be skipped, False otherwise.
         """
 
     @abstractmethod
@@ -38,25 +40,27 @@ class DiffusionCache(ABC):
         """Cache the result of a full forward pass to the cache state.
 
         Args:
-            hidden_states: Output of transformer blocks.
-            original_hidden_states: Input before blocks.
-            **kwargs: Keyword args.
+            hidden_states: Output of the transformer blocks.
+            original_hidden_states: Input from before the transformer blocks.
+            **kwargs: Additional parameters that may be helpful.
         """
 
     @abstractmethod
     def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
-        """Reconstruct output from cache.
+        """Computes an approximation of the forward pass using cached data. Reads from the cache.
 
         Args:
-            hidden_states: Output of transformer blocks.
-            original_hidden_states: Input before blocks.
-            **kwargs: Keyword args.
+            hidden_states: The current input/intermediate hidden states.
+            **kwargs: Additional parameters for the retrieval strategy.
+
+        Returns:
+            torch.Tensor: The approximated output of the forward pass.
         """
 
-    def calibrate(self, **kwargs):
-        """Calibrate the values for the cache.
+    def calibrate(self, **kwargs) -> None:
+        """Performs a calibration step to learn cache thresholds or values.
 
         Args:
-            **kwargs
+            **kwargs: Additional parameters that may be helpful.
         """
         pass

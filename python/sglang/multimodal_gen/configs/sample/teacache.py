@@ -14,10 +14,6 @@ class TeaCacheParams(CacheParams):
     """
     Parameters for [TeaCache](https://arxiv.org/abs/2411.14324).
 
-    TeaCache accelerates diffusion inference by skipping redundant forward passes
-    when consecutive denoising steps are sufficiently similar, as measured by the
-    accumulated relative L1 distance of modulated inputs.
-
     Attributes:
         rel_l1_thresh (`float`, defaults to `0.2`):
             Threshold for accumulated relative L1 distance. When below this threshold, the
@@ -45,6 +41,8 @@ class TeaCacheParams(CacheParams):
             the polynomial coefficients to use. When set, it takes precedence over
             the `coefficients` field, allowing dynamic coefficient selection based
             on any property of the params (e.g., `use_ret_steps` for Wan models).
+        use_ret_steps: (`bool`, `None`, defaults to `None`):
+            Used exclusively for wanvideo models to select different modulated inputs.
     """
 
     rel_l1_thresh: float = 0.2
