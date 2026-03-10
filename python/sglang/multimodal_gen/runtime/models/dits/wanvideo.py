@@ -1111,7 +1111,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             # compute hidden_states using the cached state
             hidden_states = self.cache.read(hidden_states)
         else:
-            if self.cache:
+            if self.cache and not self.calibrate_cache:
                 original_hidden_states = hidden_states.clone()
 
             for block in self.blocks:
