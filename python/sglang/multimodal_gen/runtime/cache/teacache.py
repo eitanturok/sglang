@@ -48,7 +48,7 @@ def _compute_rel_l1_distance_tensor(
 
 
 class TeaCacheState:
-    """Tracks step progress, cached tensors, and L1 distances for one CFG path. Updated every timestep"""
+    """Tracks step progress, cached tensors, and L1 distances for a single CFG path. Updated every timestep."""
 
     def __init__(self) -> None:
         self.step: int = -1

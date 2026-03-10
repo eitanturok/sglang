@@ -117,7 +117,7 @@ class CachableDiT(BaseDiT):
                 - False: no cache strategy requested.
                 - DiffusionCache: an active cache strategy (e.g. TeaCacheStrategy).
             calibrate_cache: When True, run every forward pass to calibrate
-                the values needed for future caching.
+                the values needed for caching.
         """
         super().__init__(config, **kwargs)
         self.cache: TeaCacheStrategy | bool | None = None
@@ -127,8 +127,7 @@ class CachableDiT(BaseDiT):
         """Construct the cache strategy from the current forward_batch context.
 
         Called lazily on the first forward pass because sampling params
-        (e.g. teacache_params, num_inference_steps) are only available then.
-        This is the single place that reads from the global forward_context.
+        (e.g. `enable_teacache`) are only available then.
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import (
             get_forward_context,
@@ -138,9 +137,10 @@ class CachableDiT(BaseDiT):
         if fb is None:
             return
 
+        # caching strategies may handle pos/neg cfg separately
         supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
-        # check which caching strategy is implemented
+        # select caching strategy
         if fb.enable_teacache:
             self.cache = TeaCacheStrategy(supports_cfg)
         else:
