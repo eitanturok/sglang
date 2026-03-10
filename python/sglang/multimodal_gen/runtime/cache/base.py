@@ -1,36 +1,61 @@
 # SPDX-License-Identifier: Apache-2.0
-"""
-Base class for diffusion model cache strategies (TeaCache, MagCache, etc.).
-"""
+from abc import ABC, abstractmethod
 
-from __future__ import annotations
+import torch
 
 
-class DiffusionCache:
+class DiffusionCache(ABC):
+    """Base class for diffusion timestep-caching strategies.
+
+    The contract between a CachableDiT and a DiffusionCache:
+    1. CachableDiT calls reset() at step 0
+    2. CachableDiT calls should_skip() with model-specific
+       context to decide whether to run transformer blocks
+    3. If skipping:  output = cache.read(hidden_states)
+    4. If computing: cache.write(hidden_states, original, context)
+
+    Subclasses define what "context" means for their technique.
     """
-    Marker base class for diffusion model timestep caching strategies.
 
-    Note: this is *timestep-level* caching — skipping the full transformer forward
-    pass for certain denoising timesteps. It is unrelated to Cache-DiT's block-step
-    caching, which operates at the transformer-block level.
+    @abstractmethod
+    def maybe_reset(self, curr_step: int) -> None:
+        """Clear all cached state for a new generation.
 
-    Concrete subclasses (TeaCacheStrategy, etc.) own their own state and implement:
-        maybe_reset()                          — call every forward pass; detects new generations
-        should_skip(temb, timestep_proj) -> bool  — skip decision
-        write(hidden_states, original)         — store residual
-        read(hidden_states) -> Tensor          — reconstruct from residual
+        Args:
+            curr_step: Current diffusion timestep index.
+        """
 
-    is_cfg_negative is read from forward_batch internally via _get_state().
+    @abstractmethod
+    def should_skip(self, curr_step: int, **context) -> bool:
+        """Decide whether to skip this timestep pass.
 
-    Typical forward pass usage in CachableDiT:
+        Args:
+            curr_step: Current diffusion timestep index.
+            **context: Model-specific parameters the caching strategy
+                       needs to decide whether to skip.
+        """
 
-        # Each forward pass:
-        cache.maybe_reset()
-        should_skip = cache.should_skip(temb, timestep_proj)
-        if should_skip:
-            hidden_states = cache.read(is_cfg_negative, hidden_states)
-        else:
-            original_hidden_states = hidden_states.clone()
-            # ... run transformer blocks ...
-            cache.write(is_cfg_negative, hidden_states, original_hidden_states)
-    """
+    @abstractmethod
+    def write(
+        self,
+        hidden_states: torch.Tensor,
+        original_hidden_states: torch.Tensor,
+        **context
+    ) -> None:
+        """Cache the result of a full forward pass to the cache state.
+
+        Args:
+            hidden_states: Output of transformer blocks.
+            original_hidden_states: Input before blocks.
+            **context: Same context passed to should_skip.
+        """
+
+    @abstractmethod
+    def read(self, hidden_states: torch.Tensor, **context) -> torch.Tensor:
+        """Reconstruct output from cache.
+
+        Args:
+            hidden_states: Output of transformer blocks.
+            original_hidden_states: Input before blocks.
+            **context: Same context passed to should_skip.
+        """

@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from sglang.multimodal_gen.runtime.cache import DiffusionCache
+
 if TYPE_CHECKING:
     from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
 
@@ -76,7 +78,7 @@ class TeaCacheState:
         return f"TeaCacheState(accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
 
 
-class TeaCacheStrategy:
+class TeaCacheStrategy(DiffusionCache):
     """TeaCache skips diffusion forward passes when consecutive steps are similar enough.
 
     Owns two TeaCacheState objects (positive + optional negative CFG branch).
@@ -174,7 +176,7 @@ class TeaCacheStrategy:
             ), f"expected start_skipping <= end_skipping but got start_skipping={self.start_skipping} end_skipping={self.end_skipping}"
 
     def should_skip(
-        self, timestep_proj: torch.Tensor, temb: torch.Tensor, curr_step: int
+        self, curr_step: int, timestep_proj: torch.Tensor, temb: torch.Tensor
     ) -> bool:
         """Decide whether this forward pass can be skipped."""
         state = self._get_state()
@@ -213,11 +215,13 @@ class TeaCacheStrategy:
         self,
         hidden_states: torch.Tensor,
         original_hidden_states: torch.Tensor,
-        timestep_proj: torch.Tensor,
-        temb: torch.Tensor,
+        timestep_proj: torch.Tensor | None = None,
+        temb: torch.Tensor | None = None,
     ) -> None:
         """Store residual after a full forward pass."""
         assert self.cache_params is not None
+        assert timestep_proj is not None
+        assert temb is not None
         modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()

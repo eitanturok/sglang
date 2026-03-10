@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from sglang.multimodal_gen.configs.models import DiTConfig
-from sglang.multimodal_gen.runtime.cache.base import DiffusionCache
+from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
 
@@ -120,7 +120,7 @@ class CachableDiT(BaseDiT):
                 the values needed for future caching.
         """
         super().__init__(config, **kwargs)
-        self.cache: DiffusionCache | None | bool = None
+        self.cache: TeaCacheStrategy | None | bool = None
         self.calibrate_cache: bool = False
 
     def init_cache(self) -> None:
@@ -130,7 +130,6 @@ class CachableDiT(BaseDiT):
         (e.g. teacache_params, num_inference_steps) are only available then.
         This is the single place that reads from the global forward_context.
         """
-        from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
         from sglang.multimodal_gen.runtime.managers.forward_context import (
             get_forward_context,
         )

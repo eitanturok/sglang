@@ -1105,7 +1105,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             self.cache
             and not self.calibrate_cache
             and self.cache.should_skip(
-                timestep_proj, temb, forward_context.current_timestep
+                forward_context.current_timestep, timestep_proj, temb
             )
         )
 
@@ -1122,7 +1122,10 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
             if self.cache and not self.calibrate_cache:
                 self.cache.write(
-                    hidden_states, original_hidden_states, timestep_proj, temb
+                    hidden_states,
+                    original_hidden_states,
+                    timestep_proj=timestep_proj,
+                    temb=temb,
                 )
 
         if sequence_shard_enabled:
