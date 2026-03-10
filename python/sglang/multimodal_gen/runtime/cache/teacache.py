@@ -184,11 +184,12 @@ class TeaCacheStrategy(DiffusionCache):
                 self.start_skipping <= self.end_skipping
             ), f"expected start_skipping <= end_skipping but got start_skipping={self.start_skipping} end_skipping={self.end_skipping}"
 
-    def should_skip(self, timestep_proj: torch.Tensor, temb: torch.Tensor) -> bool:
+    def should_skip(
+        self, modulated_input: torch.Tensor | None = None, **kwargs
+    ) -> bool:
         """Decide whether this forward pass can be skipped."""
         state = self._get_state()
         assert self.cache_params is not None
-        modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
 
         # Boundary steps always compute
         if state.step < self.start_skipping or state.step >= self.end_skipping:
@@ -202,6 +203,7 @@ class TeaCacheStrategy(DiffusionCache):
             return False
 
         assert state.previous_modulated_input is not None
+        assert modulated_input is not None
         rel_l1 = _compute_rel_l1_distance_tensor(
             modulated_input, state.previous_modulated_input
         )
@@ -222,18 +224,15 @@ class TeaCacheStrategy(DiffusionCache):
         self,
         hidden_states: torch.Tensor,
         original_hidden_states: torch.Tensor,
-        timestep_proj: torch.Tensor | None = None,
-        temb: torch.Tensor | None = None,
+        modulated_input: torch.Tensor | None = None,
+        **kwargs,
     ) -> None:
         """Store residual after a full forward pass."""
         assert self.cache_params is not None
-        assert timestep_proj is not None
-        assert temb is not None
-        modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()
         state.update(modulated_input, residual)
 
-    def read(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
         """Reconstruct output from cached residual."""
         return hidden_states + self._get_state().previous_residual

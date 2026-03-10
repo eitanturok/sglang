@@ -120,7 +120,8 @@ class CachableDiT(BaseDiT):
                 the values needed for future caching.
         """
         super().__init__(config, **kwargs)
-        self.cache: TeaCacheStrategy | None | bool = None
+        self.cache: TeaCacheStrategy | None = None
+        self.enable_cache: bool | None = None
         self.calibrate_cache: bool = False
 
     def init_cache(self) -> None:
@@ -140,10 +141,12 @@ class CachableDiT(BaseDiT):
 
         supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
+        # check which caching strategy is implemented
         if fb.enable_teacache:
             self.cache = TeaCacheStrategy(supports_cfg)
-        else:
-            self.cache = False
+
+        # enable_cache is True if we have are using any caching strategy
+        self.enable_cache = self.cache is not None
 
         if fb.calibrate_cache:
             if self.cache:
