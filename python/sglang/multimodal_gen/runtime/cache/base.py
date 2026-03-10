@@ -7,32 +7,25 @@ import torch
 class DiffusionCache(ABC):
     """Base class for diffusion timestep-caching strategies.
 
-    The contract between a CachableDiT and a DiffusionCache:
-    1. CachableDiT calls reset() at step 0
-    2. CachableDiT calls should_skip() with model-specific
-       context to decide whether to run transformer blocks
-    3. If skipping:  output = cache.read(hidden_states)
-    4. If computing: cache.write(hidden_states, original, context)
-
-    Subclasses define what "context" means for their technique.
+    Each timestep caching technique must implement `maybe_reset`,
+    `should_skip`, `write`, `read`, and optionally `calibrate`.
     """
 
     @abstractmethod
     def maybe_reset(self, curr_step: int) -> None:
-        """Clear all cached state for a new generation.
+        """Clear the cached state for a new generation.
 
         Args:
             curr_step: Current diffusion timestep index.
         """
 
     @abstractmethod
-    def should_skip(self, curr_step: int, **context) -> bool:
+    def should_skip(self, curr_step: int, **kwargs) -> bool:
         """Decide whether to skip this timestep pass.
 
         Args:
             curr_step: Current diffusion timestep index.
-            **context: Model-specific parameters the caching strategy
-                       needs to decide whether to skip.
+            **kwargs: Keyword args.
         """
 
     @abstractmethod
@@ -40,22 +33,30 @@ class DiffusionCache(ABC):
         self,
         hidden_states: torch.Tensor,
         original_hidden_states: torch.Tensor,
-        **context
+        **kwargs
     ) -> None:
         """Cache the result of a full forward pass to the cache state.
 
         Args:
             hidden_states: Output of transformer blocks.
             original_hidden_states: Input before blocks.
-            **context: Same context passed to should_skip.
+            **kwargs: Keyword args.
         """
 
     @abstractmethod
-    def read(self, hidden_states: torch.Tensor, **context) -> torch.Tensor:
+    def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
         """Reconstruct output from cache.
 
         Args:
             hidden_states: Output of transformer blocks.
             original_hidden_states: Input before blocks.
-            **context: Same context passed to should_skip.
+            **kwargs: Keyword args.
         """
+
+    def calibrate(self, **kwargs):
+        """Calibrate the values for the cache.
+
+        Args:
+            **kwargs
+        """
+        pass
