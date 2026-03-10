@@ -59,11 +59,13 @@ class TeaCacheState:
     """Mutable per-step state for one CFG branch."""
 
     def __init__(self) -> None:
+        self.step: int = -1
         self.previous_modulated_input: torch.Tensor | None = None
         self.previous_residual: torch.Tensor | None = None
         self.accumulated_rel_l1_distance: torch.Tensor | None = None
 
     def reset(self) -> None:
+        self.step = -1
         self.previous_modulated_input = None
         self.previous_residual = None
         self.accumulated_rel_l1_distance = None
@@ -75,7 +77,7 @@ class TeaCacheState:
         self.previous_residual = previous_residual
 
     def __repr__(self):
-        return f"TeaCacheState(accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
+        return f"TeaCacheState(step={self.step}, accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
 
 
 class TeaCacheStrategy(DiffusionCache):
@@ -97,9 +99,11 @@ class TeaCacheStrategy(DiffusionCache):
     """
 
     def __init__(self, supports_cfg: bool) -> None:
+        # params updated every forward pass
         self.state = TeaCacheState()
         self.state_neg = TeaCacheState() if supports_cfg else None
-        # Set in maybe_reset() at the start of each new generation
+        # params updated at the start of each new generation
+        # set in maybe_reset()
         self.cache_params: TeaCacheParams | None = None
         self.coefficients: list[float] = []
         self.num_steps: int = 0
@@ -113,13 +117,11 @@ class TeaCacheStrategy(DiffusionCache):
 
         fb = get_forward_context().forward_batch
         is_cfg_negative = fb.is_cfg_negative if fb is not None else False
-        return (
-            self.state_neg
-            if (is_cfg_negative and self.state_neg is not None)
-            else self.state
-        )
+        if is_cfg_negative and self.state_neg is not None:
+            return self.state_neg
+        return self.state
 
-    def maybe_reset(self, curr_step: int) -> None:
+    def maybe_reset(self, **kwargs) -> None:
         """Reset state when the previous generation is complete and initialize TeaCacheParams,
         num_steps, and coefficients at the start of a new generation. Called on every forward
         pass before should_skip().
@@ -128,10 +130,17 @@ class TeaCacheStrategy(DiffusionCache):
             get_forward_context,
         )
 
-        # Reset at the start of each new generation
-        if curr_step == 0:
-            state = self._get_state()
+        state = self._get_state()
+
+        # Reset state if we completed a generation
+        if state.step == self.num_steps and state.step > 0:
             state.reset()
+
+        # increment the number of steps at the beginning of each forward pass
+        state.step += 1
+
+        # Initialize values at the start of each new generation
+        if state.step == 0:
 
             # set the teacache parameters
             fb = get_forward_context().forward_batch
@@ -175,16 +184,14 @@ class TeaCacheStrategy(DiffusionCache):
                 self.start_skipping <= self.end_skipping
             ), f"expected start_skipping <= end_skipping but got start_skipping={self.start_skipping} end_skipping={self.end_skipping}"
 
-    def should_skip(
-        self, curr_step: int, timestep_proj: torch.Tensor, temb: torch.Tensor
-    ) -> bool:
+    def should_skip(self, timestep_proj: torch.Tensor, temb: torch.Tensor) -> bool:
         """Decide whether this forward pass can be skipped."""
         state = self._get_state()
         assert self.cache_params is not None
         modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
 
         # Boundary steps always compute
-        if curr_step < self.start_skipping or curr_step >= self.end_skipping:
+        if state.step < self.start_skipping or state.step >= self.end_skipping:
             return False
 
         # First time computing, no previous input to compare against

@@ -900,8 +900,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         )
 
         # For type checking
-
-        self.cnt = 0
         self.__post_init__()
 
         # misc
@@ -962,7 +960,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         if self.cache is None:
             self.init_cache()
         if self.cache:
-            self.cache.maybe_reset(forward_context.current_timestep)
+            self.cache.maybe_reset()
 
         if forward_batch is not None:
             sequence_shard_enabled = (
@@ -1104,9 +1102,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         should_skip_forward = (
             self.cache
             and not self.calibrate_cache
-            and self.cache.should_skip(
-                forward_context.current_timestep, timestep_proj, temb
-            )
+            and self.cache.should_skip(timestep_proj, temb)
         )
 
         if should_skip_forward:
@@ -1120,7 +1116,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     hidden_states, encoder_hidden_states, timestep_proj, freqs_cis
                 )
 
-            if self.cache and not self.calibrate_cache:
+            if self.cache:
                 self.cache.write(
                     hidden_states,
                     original_hidden_states,

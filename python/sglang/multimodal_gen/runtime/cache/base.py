@@ -12,15 +12,15 @@ class DiffusionCache(ABC):
     """
 
     @abstractmethod
-    def maybe_reset(self, curr_step: int) -> None:
+    def maybe_reset(self, **kwargs) -> None:
         """Clear the cached state for a new generation.
 
         Args:
-            curr_step: Current diffusion timestep index.
+            **kwargs: Keyword args.
         """
 
     @abstractmethod
-    def should_skip(self, curr_step: int, **kwargs) -> bool:
+    def should_skip(self, **kwargs) -> bool:
         """Decide whether to skip this timestep pass.
 
         Args:
