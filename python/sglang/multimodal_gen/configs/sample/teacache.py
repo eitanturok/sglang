@@ -19,10 +19,10 @@ class TeaCacheParams(CacheParams):
     accumulated relative L1 distance of modulated inputs.
 
     Attributes:
-        rel_l1_thresh (`float`, defaults to `0.0`):
-            Sensitivity for skipping steps. A higher threshold increases speed by
-            skipping more aggressively, but may reduce image fidelity.
-            (e.g., 0.25 $\\approx$ 1.5x speedup; 0.6 $\\approx$ 2.0x).
+        rel_l1_thresh (`float`, defaults to `0.2`):
+            Threshold for accumulated relative L1 distance. When below this threshold, the
+            forward pass is skipped. Recommended values: 0.25 for ~1.5x speedup, 0.4 for ~1.8x,
+            0.6 for ~2.0x.
         start_skipping (`int`, 'float', defaults to `0.2`):
             The number of timesteps after which we may skip a forward pass. These early
             steps define the global structure and are too critical to not skip.
@@ -39,17 +39,15 @@ class TeaCacheParams(CacheParams):
                                computes the first 10%).
         coefficients (`List[float]`, defaults to `[]`):
             Polynomial coefficients for rescaling the raw relative L1 distance,
-            evaluated as ``c[0]*x**4 + c[1]*x**3 + c[2]*x**2 + c[3]*x + c[4]``.
-            If empty and no ``coefficients_callback`` is set, defaults are
-            selected based on the model type.
+            evaluated as `c[0]*x**4 + c[1]*x**3 + c[2]*x**2 + c[3]*x + c[4]`.
         coefficients_callback (`Callable[[TeaCacheParams], List[float]]`, *optional*):
-            A function that receives this ``TeaCacheParams`` instance and returns
+            A function that receives this `TeaCacheParams` instance and returns
             the polynomial coefficients to use. When set, it takes precedence over
-            the ``coefficients`` field, allowing dynamic coefficient selection based
-            on any property of the params (e.g., ``use_ret_steps`` for Wan models).
+            the `coefficients` field, allowing dynamic coefficient selection based
+            on any property of the params (e.g., `use_ret_steps` for Wan models).
     """
 
-    rel_l1_thresh: float = 0.0
+    rel_l1_thresh: float = 0.2
     start_skipping: int = 5
     end_skipping: int = -1
     coefficients: list[float] = field(default_factory=list)
