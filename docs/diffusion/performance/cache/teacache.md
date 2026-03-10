@@ -73,7 +73,7 @@ TeaCache is built into the following model families:
 | Model Family | CFG Cache Separation | Notes |
 |--------------|---------------------|-------|
 | Wan (wan2.1, wan2.2) | Yes | Full support |
-| Hunyuan (HunyuanVideo) | Yes | To be supported |
+| Hunyuan (HunyuanVideo) | Yes | Full support |
 | Z-Image | Yes | To be supported |
 | Flux | No | To be supported |
 | Qwen | No | To be supported |
