@@ -150,7 +150,9 @@ class CachableDiT(BaseDiT):
             if self.cache:
                 self.calibrate_cache = fb.calibrate_cache
             else:
-                logger.warning("Calibrate cache is set to True but no cache is defined.")
+                logger.warning(
+                    "Calibrate cache is set to True but no cache is defined."
+                )
 
     @classmethod
     def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:

@@ -27,12 +27,17 @@ if TYPE_CHECKING:
     from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
 
 
-def _rescale_distance_tensor(coefficients: list[float], x: torch.Tensor) -> torch.Tensor:
+def _rescale_distance_tensor(
+    coefficients: list[float], x: torch.Tensor
+) -> torch.Tensor:
     """Polynomial rescaling using tensor operations (torch.compile friendly)."""
     c = coefficients
     return c[0] * x**4 + c[1] * x**3 + c[2] * x**2 + c[3] * x + c[4]
 
-def _compute_rel_l1_distance_tensor(current: torch.Tensor, previous: torch.Tensor) -> torch.Tensor:
+
+def _compute_rel_l1_distance_tensor(
+    current: torch.Tensor, previous: torch.Tensor
+) -> torch.Tensor:
     """Compute relative L1 distance as a tensor (torch.compile friendly)."""
     prev_mean = previous.abs().mean()
     curr_diff_mean = (current - previous).abs().mean()
@@ -61,11 +66,14 @@ class TeaCacheState:
         self.previous_residual = None
         self.accumulated_rel_l1_distance = None
 
-    def update(self, modulated_inp: torch.Tensor | None, previous_residual: torch.Tensor | None) -> None:
+    def update(
+        self, modulated_inp: torch.Tensor | None, previous_residual: torch.Tensor | None
+    ) -> None:
         self.previous_modulated_input = modulated_inp
         self.previous_residual = previous_residual
 
-    def __repr__(self): return f"TeaCacheState(accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
+    def __repr__(self):
+        return f"TeaCacheState(accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
 
 
 class TeaCacheStrategy:
@@ -89,71 +97,125 @@ class TeaCacheStrategy:
     def __init__(self, supports_cfg: bool) -> None:
         self.state = TeaCacheState()
         self.state_neg = TeaCacheState() if supports_cfg else None
-        # Set in maybe_reset() at the start of a new generation
+        # Set in maybe_reset() at the start of each new generation
         self.cache_params: TeaCacheParams | None = None
         self.coefficients: list[float] = []
         self.num_steps: int = 0
+        self.start_skipping: int = 0
+        self.end_skipping: int = -1
 
     def _get_state(self) -> TeaCacheState:
-        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
+        from sglang.multimodal_gen.runtime.managers.forward_context import (
+            get_forward_context,
+        )
+
         fb = get_forward_context().forward_batch
         is_cfg_negative = fb.is_cfg_negative if fb is not None else False
-        return self.state_neg if (is_cfg_negative and self.state_neg is not None) else self.state
+        return (
+            self.state_neg
+            if (is_cfg_negative and self.state_neg is not None)
+            else self.state
+        )
 
     def maybe_reset(self, curr_step: int) -> None:
         """Reset state when the previous generation is complete and initialize TeaCacheParams,
         num_steps, and coefficients at the start of a new generation. Called on every forward
         pass before should_skip().
         """
-        from sglang.multimodal_gen.runtime.managers.forward_context import get_forward_context
+        from sglang.multimodal_gen.runtime.managers.forward_context import (
+            get_forward_context,
+        )
 
         # Reset at the start of each new generation
         if curr_step == 0:
             state = self._get_state()
             state.reset()
-            fb = get_forward_context().forward_batch
-            assert fb is not None
 
+            # set the teacache parameters
+            fb = get_forward_context().forward_batch
+            assert (
+                fb is not None
+            ), "TeaCacheStrategy required the forward_batch not be None"
             self.cache_params = getattr(fb.sampling_params, "teacache_params", None)
 
-            assert self.cache_params is not None, "TeaCacheStrategy requires teacache_params in sampling_params"
+            # set the number of inference steps
+            assert (
+                self.cache_params is not None
+            ), "TeaCacheStrategy requires teacache_params in sampling_params"
             self.num_steps = int(fb.num_inference_steps)
 
+            # set the teacache coefficients
             if self.cache_params.coefficients_callback:
-                self.coefficients = self.cache_params.coefficients_callback(self.cache_params)
+                self.coefficients = self.cache_params.coefficients_callback(
+                    self.cache_params
+                )
             else:
                 self.coefficients = self.cache_params.coefficients
 
-    def should_skip(self, timestep_proj: torch.Tensor, temb: torch.Tensor, curr_step: int) -> bool:
+            # set the start and end skippable steps
+            if isinstance(self.cache_params.start_skipping, float):
+                self.start_skipping = int(
+                    self.num_steps * self.cache_params.start_skipping
+                )
+            elif self.cache_params.start_skipping < 0:
+                self.start_skipping = self.num_steps + self.cache_params.start_skipping
+            else:
+                self.start_skipping = self.cache_params.start_skipping
+
+            if isinstance(self.cache_params.end_skipping, float):
+                self.end_skipping = int(self.num_steps * self.cache_params.end_skipping)
+            elif self.cache_params.end_skipping < 0:
+                self.end_skipping = self.num_steps + self.cache_params.end_skipping
+            else:
+                self.end_skipping = self.cache_params.end_skipping
+
+            assert self.start_skipping <= self.end_skipping
+
+    def should_skip(
+        self, timestep_proj: torch.Tensor, temb: torch.Tensor, curr_step: int
+    ) -> bool:
         """Decide whether this forward pass can be skipped."""
         state = self._get_state()
         assert self.cache_params is not None
         modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
-        ic(state)
 
-        # Boundary steps always compute.
-        if curr_step < self.cache_params.skip_start_step or curr_step >= self.num_steps - self.cache_params.skip_end_step:
+        # Boundary steps always compute
+        if curr_step < self.start_skipping or curr_step >= self.end_skipping:
             return False
 
-        # First time computing, no previous input to compare against.
+        # First time computing, no previous input to compare against
         if state.accumulated_rel_l1_distance is None:
-            state.accumulated_rel_l1_distance =  torch.zeros(1, device=modulated_input.device, dtype=modulated_input.dtype)
+            state.accumulated_rel_l1_distance = torch.zeros(
+                1, device=modulated_input.device, dtype=modulated_input.dtype
+            )
             return False
 
-        rel_l1 = _compute_rel_l1_distance_tensor(modulated_input, state.previous_modulated_input)
+        assert state.previous_modulated_input is not None
+        rel_l1 = _compute_rel_l1_distance_tensor(
+            modulated_input, state.previous_modulated_input
+        )
         rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
         state.accumulated_rel_l1_distance += rescaled
 
+        # If below threshold, skip the forward pass
         if state.accumulated_rel_l1_distance < self.cache_params.rel_l1_thresh:
-            # state.cnt += 1
             return True
 
-        # Threshold exceeded: reset accumulated so next window starts fresh.
-        state.accumulated_rel_l1_distance = torch.zeros(1, device=modulated_input.device, dtype=modulated_input.dtype)
+        # If threshold exceeded, reset accumulated so next window starts fresh
+        state.accumulated_rel_l1_distance = torch.zeros(
+            1, device=modulated_input.device, dtype=modulated_input.dtype
+        )
         return False
 
-    def write(self, hidden_states: torch.Tensor, original_hidden_states: torch.Tensor, timestep_proj: torch.Tensor, temb: torch.Tensor) -> None:
+    def write(
+        self,
+        hidden_states: torch.Tensor,
+        original_hidden_states: torch.Tensor,
+        timestep_proj: torch.Tensor,
+        temb: torch.Tensor,
+    ) -> None:
         """Store residual after a full forward pass."""
+        assert self.cache_params is not None
         modulated_input = timestep_proj if self.cache_params.use_ret_steps else temb
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()

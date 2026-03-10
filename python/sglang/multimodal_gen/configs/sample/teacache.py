@@ -23,10 +23,10 @@ class TeaCacheParams(CacheParams):
             Sensitivity for skipping steps. A higher threshold increases speed by
             skipping more aggressively, but may reduce image fidelity.
             (e.g., 0.25 $\\approx$ 1.5x speedup; 0.6 $\\approx$ 2.0x).
-        skip_start_step (`int`, defaults to `5`):
+        start_skipping (`int`, defaults to `5`):
             Initial steps to always compute. These early steps define the global
             structure/composition and are too critical to skip.
-        skip_end_step (`int`, defaults to `0`):
+        end_skipping (`int`, defaults to `0`):
             Final steps to always compute. Use this to ensure the last refinement
             passes preserve fine textures and details.
         coefficients (`List[float]`, defaults to `[]`):
@@ -40,9 +40,10 @@ class TeaCacheParams(CacheParams):
             the ``coefficients`` field, allowing dynamic coefficient selection based
             on any property of the params (e.g., ``use_ret_steps`` for Wan models).
     """
+
     rel_l1_thresh: float = 0.0
-    skip_start_step: int = 5
-    skip_end_step: int = 0
+    start_skipping: int = 5
+    end_skipping: int = 0
     coefficients: list[float] = field(default_factory=list)
     coefficients_callback: Callable[[TeaCacheParams], list[float]] | None = field(
         default=None, repr=False
