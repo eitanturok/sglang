@@ -23,12 +23,20 @@ class TeaCacheParams(CacheParams):
             Sensitivity for skipping steps. A higher threshold increases speed by
             skipping more aggressively, but may reduce image fidelity.
             (e.g., 0.25 $\\approx$ 1.5x speedup; 0.6 $\\approx$ 2.0x).
-        start_skipping (`int`, defaults to `5`):
-            Initial steps to always compute. These early steps define the global
-            structure/composition and are too critical to skip.
+        start_skipping (`int`, 'float', defaults to `0.2`):
+            The number of timesteps after which we may skip a forward pass. These early
+            steps define the global structure and are too critical to not skip.
+            int: The number of timesteps after which we can skip. If negative,
+                 this is an offset from the end of the schedule.
+            float (0.0 - 1.0): A percentage of the total steps (e.g., 0.1
+                               computes the first 10%).
         end_skipping (`int`, defaults to `0`):
-            Final steps to always compute. Use this to ensure the last refinement
-            passes preserve fine textures and details.
+            The number of timesteps after which we are no longer able to skip
+            forward passes. The last steps refine fine textures and details.
+            int: The number of timesteps after which skipping ends. If negative,
+                 this is an offset from the total number of steps.
+            float (0.0 - 1.0): A percentage of the total steps (e.g., 0.1
+                               computes the first 10%).
         coefficients (`List[float]`, defaults to `[]`):
             Polynomial coefficients for rescaling the raw relative L1 distance,
             evaluated as ``c[0]*x**4 + c[1]*x**3 + c[2]*x**2 + c[3]*x + c[4]``.
@@ -43,7 +51,7 @@ class TeaCacheParams(CacheParams):
 
     rel_l1_thresh: float = 0.0
     start_skipping: int = 5
-    end_skipping: int = 0
+    end_skipping: int = -1
     coefficients: list[float] = field(default_factory=list)
     coefficients_callback: Callable[[TeaCacheParams], list[float]] | None = field(
         default=None, repr=False
