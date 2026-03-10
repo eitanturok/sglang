@@ -1,16 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """
-TeaCache: Temporal similarity-based caching for diffusion models.
-
-TeaCache accelerates diffusion inference by selectively skipping redundant
-computation when consecutive diffusion steps are similar enough. This is
-achieved by tracking the L1 distance between modulated inputs across timesteps.
-
-Key concepts:
-- Modulated input: The input to transformer blocks after timestep conditioning
-- L1 distance: Measures how different consecutive timesteps are
-- Threshold: When accumulated L1 distance exceeds threshold, force computation
-- CFG support: Separate caches for positive and negative branches
+TeaCache accelerates diffusion inference by skipping redundant forward
+passes when consecutive denoising steps are sufficiently similar, as measured
+by the accumulated relative L1 distance of modulated inputs.
 
 References:
 - TeaCache: Accelerating Diffusion Models with Temporal Similarity
@@ -56,7 +48,7 @@ def _compute_rel_l1_distance_tensor(
 
 
 class TeaCacheState:
-    """Mutable per-step state for one CFG branch."""
+    """Tracks step progress, cached tensors, and L1 distances for one CFG path. Updated every timestep"""
 
     def __init__(self) -> None:
         self.step: int = -1
@@ -65,6 +57,7 @@ class TeaCacheState:
         self.accumulated_rel_l1_distance: torch.Tensor | None = None
 
     def reset(self) -> None:
+        """Clear all cached tensors and reset the step counter for a new generation."""
         self.step = -1
         self.previous_modulated_input = None
         self.previous_residual = None
@@ -73,6 +66,7 @@ class TeaCacheState:
     def update(
         self, modulated_inp: torch.Tensor | None, previous_residual: torch.Tensor | None
     ) -> None:
+        """Store the current modulated input and its computed residual for possible future reuse."""
         self.previous_modulated_input = modulated_inp
         self.previous_residual = previous_residual
 
@@ -81,24 +75,15 @@ class TeaCacheState:
 
 
 class TeaCacheStrategy(DiffusionCache):
-    """TeaCache skips diffusion forward passes when consecutive steps are similar enough.
+    """Implements TeaCache to skip redundant diffusion forward passes.
 
-    Owns two TeaCacheState objects (positive + optional negative CFG branch).
-    params, num_steps, and coefficients are read from forward_batch once at the
-    start of each generation via maybe_reset() and reused for all subsequent steps.
-
-    Typical usage in a CachableDiT forward():
-
-        cache.maybe_reset()
-        if cache.should_skip(temb, timestep_proj):
-            hidden_states = cache.read(hidden_states)
-        else:
-            original = hidden_states.clone()
-            # ... run transformer blocks ...
-            cache.write(hidden_states, original)
+    TeaCacheStrategy implements teacache as a `DiffusionCache` object and
+    manages two TeaCacheState objects (positive + optional negative CFG branch)
+    and stores parameters needed to make
     """
 
     def __init__(self, supports_cfg: bool) -> None:
+        """Initialize cache states for positive and optional negative CFG branches."""
         # params updated every forward pass
         self.state = TeaCacheState()
         self.state_neg = TeaCacheState() if supports_cfg else None
@@ -111,6 +96,7 @@ class TeaCacheStrategy(DiffusionCache):
         self.end_skipping: int = -1
 
     def _get_state(self) -> TeaCacheState:
+        """Select the appropriate cache state (positive/negative cfg) based on the forward context."""
         from sglang.multimodal_gen.runtime.managers.forward_context import (
             get_forward_context,
         )
@@ -122,9 +108,11 @@ class TeaCacheStrategy(DiffusionCache):
         return self.state
 
     def maybe_reset(self, **kwargs) -> None:
-        """Reset state when the previous generation is complete and initialize TeaCacheParams,
-        num_steps, and coefficients at the start of a new generation. Called on every forward
-        pass before should_skip().
+        """Maybe reset the TeaCacheState by doing three things:
+        1. Reset TeaCacheState when the previous generation is complete
+        2. Increment the state's timestep counter (always)
+        3. Initialize parameters at the start of a new generation.
+        Called on every forward pass before should_skip().
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import (
             get_forward_context,
@@ -187,7 +175,7 @@ class TeaCacheStrategy(DiffusionCache):
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs
     ) -> bool:
-        """Decide whether this forward pass can be skipped."""
+        """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
         assert self.cache_params is not None
 
@@ -227,12 +215,12 @@ class TeaCacheStrategy(DiffusionCache):
         modulated_input: torch.Tensor | None = None,
         **kwargs,
     ) -> None:
-        """Store residual after a full forward pass."""
+        """After the forward pass, cache the residual and the current modulated input."""
         assert self.cache_params is not None
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()
         state.update(modulated_input, residual)
 
     def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
-        """Reconstruct output from cached residual."""
+        """Before the forward pass, read from the cache and apply it to the current hidden states."""
         return hidden_states + self._get_state().previous_residual
