@@ -169,7 +169,9 @@ class TeaCacheStrategy:
             else:
                 self.end_skipping = self.cache_params.end_skipping
 
-            assert self.start_skipping <= self.end_skipping
+            assert (
+                self.start_skipping <= self.end_skipping
+            ), f"expected start_skipping <= end_skipping but got start_skipping={self.start_skipping} end_skipping={self.end_skipping}"
 
     def should_skip(
         self, timestep_proj: torch.Tensor, temb: torch.Tensor, curr_step: int
