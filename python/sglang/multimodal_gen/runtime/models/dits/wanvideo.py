@@ -1108,7 +1108,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                 timestep_proj, temb, forward_context.current_timestep
             )
         )
-        ic(should_skip_forward)
 
         if should_skip_forward:
             hidden_states = self.cache.read(hidden_states)
