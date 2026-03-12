@@ -11,7 +11,10 @@ References:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 import torch
 
@@ -92,8 +95,8 @@ class TeaCacheStrategy(DiffusionCache):
         self.cache_params: TeaCacheParams | None = None
         self.coefficients: list[float] = []
         self.num_steps: int = 0
-        self.start_skipping: int = 0
-        self.end_skipping: int = -1
+        self.start_skipping: int | None = None
+        self.end_skipping: int | None = None
 
     def _get_state(self) -> TeaCacheState:
         """Select the appropriate cache state (positive/negative cfg) based on the forward context."""
@@ -153,24 +156,28 @@ class TeaCacheStrategy(DiffusionCache):
 
             # set the start and end skippable steps
             if isinstance(self.cache_params.start_skipping, float):
-                self.start_skipping = int(
-                    self.num_steps * self.cache_params.start_skipping
-                )
+                start_skipping = int(self.num_steps * self.cache_params.start_skipping)
             elif self.cache_params.start_skipping < 0:
-                self.start_skipping = self.num_steps + self.cache_params.start_skipping
+                start_skipping = self.num_steps + self.cache_params.start_skipping
             else:
-                self.start_skipping = self.cache_params.start_skipping
+                start_skipping = self.cache_params.start_skipping
 
             if isinstance(self.cache_params.end_skipping, float):
-                self.end_skipping = int(self.num_steps * self.cache_params.end_skipping)
+                end_skipping = int(self.num_steps * self.cache_params.end_skipping)
             elif self.cache_params.end_skipping < 0:
-                self.end_skipping = self.num_steps + self.cache_params.end_skipping
+                end_skipping = self.num_steps + self.cache_params.end_skipping
             else:
-                self.end_skipping = self.cache_params.end_skipping
+                end_skipping = self.cache_params.end_skipping
 
-            assert (
-                self.start_skipping <= self.end_skipping
-            ), f"expected start_skipping <= end_skipping but got start_skipping={self.start_skipping} end_skipping={self.end_skipping}"
+            if start_skipping > end_skipping:
+                logger.warning(
+                    f"TeaCache skip window is invalid (start_skipping={self.start_skipping} > "
+                    f"end_skipping={self.end_skipping}) for num_inference_steps={self.num_steps}. "
+                    "This can happen during warmup runs with very few steps. TeaCache is disabled."
+                )
+                self.start_skipping = self.end_skipping = None
+            else:
+                self.start_skipping, self.end_skipping = start_skipping, end_skipping
 
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs
@@ -178,6 +185,10 @@ class TeaCacheStrategy(DiffusionCache):
         """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
         assert self.cache_params is not None
+
+        # No valid skip window for this generation
+        if self.start_skipping is None or self.end_skipping is None:
+            return False
 
         # Boundary steps always compute
         if state.step < self.start_skipping or state.step >= self.end_skipping:
@@ -190,6 +201,7 @@ class TeaCacheStrategy(DiffusionCache):
             )
             return False
 
+        # compute the accumulated relative l1 distance
         assert state.previous_modulated_input is not None
         assert modulated_input is not None
         rel_l1 = _compute_rel_l1_distance_tensor(
