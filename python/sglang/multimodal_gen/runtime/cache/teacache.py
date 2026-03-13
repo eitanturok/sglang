@@ -54,14 +54,14 @@ class TeaCacheState:
     """Tracks step progress, cached tensors, and L1 distances for a single CFG path. Updated every timestep."""
 
     def __init__(self) -> None:
-        self.step: int = -1
+        self.step: int = 0
         self.previous_modulated_input: torch.Tensor | None = None
         self.previous_residual: torch.Tensor | None = None
         self.accumulated_rel_l1_distance: torch.Tensor | None = None
 
     def reset(self) -> None:
         """Clear all cached tensors and reset the step counter for a new generation."""
-        self.step = -1
+        self.step = 0
         self.previous_modulated_input = None
         self.previous_residual = None
         self.accumulated_rel_l1_distance = None
@@ -80,9 +80,9 @@ class TeaCacheState:
 class TeaCacheStrategy(DiffusionCache):
     """Implements TeaCache to skip redundant diffusion forward passes.
 
-    TeaCacheStrategy implements teacache as a `DiffusionCache` object and
+    TeaCacheStrategy implements teacache as a `DiffusionCache` object. It
     manages two TeaCacheState objects (positive + optional negative CFG branch)
-    and stores parameters needed to make
+    and stores parameters needed to make skippind decision.
     """
 
     def __init__(self, supports_cfg: bool) -> None:
@@ -112,9 +112,11 @@ class TeaCacheStrategy(DiffusionCache):
 
     def maybe_reset(self, **kwargs) -> None:
         """Maybe reset the TeaCacheState by doing three things:
-        1. Reset TeaCacheState when the previous generation is complete
-        2. Increment the state's timestep counter (always)
-        3. Initialize parameters at the start of a new generation.
+
+        1. Reset TeaCacheState if the previous generation is complete
+        2. Initialize parameters if at the start of a new generation.
+        3. Increment the state's timestep counter (always)
+
         Called on every forward pass before should_skip().
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import (
@@ -127,10 +129,7 @@ class TeaCacheStrategy(DiffusionCache):
         if state.step == self.num_steps and state.step > 0:
             state.reset()
 
-        # increment the number of steps at the beginning of each forward pass
-        state.step += 1
-
-        # Initialize values at the start of each new generation
+        # Initialize values if at the start of each new generation
         if state.step == 0:
 
             # set the teacache parameters
@@ -178,6 +177,9 @@ class TeaCacheStrategy(DiffusionCache):
                 self.start_skipping = self.end_skipping = None
             else:
                 self.start_skipping, self.end_skipping = start_skipping, end_skipping
+
+            # increment the number of steps always
+            state.step += 1
 
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs

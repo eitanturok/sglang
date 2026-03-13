@@ -26,7 +26,7 @@ class TeaCacheParams(CacheParams):
                  this is an offset from the end of the schedule.
             float (0.0 - 1.0): A percentage of the total steps (e.g., 0.1
                                computes the first 10%).
-        end_skipping (`int`, defaults to `0`):
+        end_skipping (`int`, defaults to `-1`):
             The number of timesteps after which we are no longer able to skip
             forward passes. The last steps refine fine textures and details.
             int: The number of timesteps after which skipping ends. If negative,
