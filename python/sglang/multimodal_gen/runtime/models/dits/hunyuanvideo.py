@@ -634,10 +634,6 @@ class HunyuanVideoTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         freqs_cis = (freqs_cos, freqs_sin) if freqs_cos is not None else None
 
-        # should_skip_forward = self.should_skip_forward_for_cached_states(
-        #     img=img, vec=vec
-        # )
-
         # if caching is enabled, we might be able to skip the forward pass
         should_skip_forward = False
         if self.cache and not self.calibrate_cache:
