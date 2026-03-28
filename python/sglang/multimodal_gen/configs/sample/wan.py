@@ -69,6 +69,8 @@ class WanT2V_1_3B_SamplingParams(SamplingParams):
             rel_l1_thresh=0.08,
             use_ret_steps=True,
             coefficients_callback=_wan_1_3b_coefficients,
+            start_skipping=5,
+            end_skipping=1.0,
         )
     )
 
@@ -103,6 +105,8 @@ class WanT2V_14B_SamplingParams(SamplingParams):
             rel_l1_thresh=0.20,
             use_ret_steps=False,
             coefficients_callback=_wan_14b_coefficients,
+            start_skipping=1,
+            end_skipping=-1,
         )
     )
 
@@ -127,6 +131,8 @@ class WanI2V_14B_480P_SamplingParam(WanT2V_1_3B_SamplingParams):
             rel_l1_thresh=0.26,
             use_ret_steps=True,
             coefficients_callback=_wan_14b_coefficients,
+            start_skipping=5,
+            end_skipping=1.0,
         )
     )
 
@@ -153,6 +159,8 @@ class WanI2V_14B_720P_SamplingParam(WanT2V_14B_SamplingParams):
             rel_l1_thresh=0.3,
             use_ret_steps=True,
             coefficients_callback=_wan_14b_coefficients,
+            start_skipping=5,
+            end_skipping=1.0,
         )
     )
 
@@ -196,6 +204,11 @@ class Wan2_2_Base_SamplingParams(SamplingParams):
     negative_prompt: str | None = (
         "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
     )
+
+    # TODO(Wan2.2): TeaCache coefficients need to be calibrated for Wan2.2 by
+    # profiling L1 distances across timesteps. Until then, teacache_params is None
+    # and enable_teacache will be accepted but silently no-op.
+    # Consider using Cache-DiT (SGLANG_CACHE_DIT_ENABLED=1) as an alternative.
 
 
 @dataclass
