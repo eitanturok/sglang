@@ -161,6 +161,7 @@ class SamplingParams:
 
     # TeaCache parameters
     enable_teacache: bool = False
+    cache_params: Any | None = None
     calibrate_cache: bool = False
 
     # Profiling
