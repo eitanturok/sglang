@@ -89,7 +89,7 @@ class TeaCacheStrategy:
         self.state_neg = TeaCacheState() if supports_cfg else None
         # params updated at the start of each new generation
         # set in maybe_reset()
-        self.teacache_params: TeaCacheParams | None = None
+        self.cache_params: TeaCacheParams | None = None
         self.coefficients: list[float] = []
         self.num_steps: int = 0
         self.start_skipping: int | None = None
@@ -161,26 +161,26 @@ class TeaCacheStrategy:
             assert (
                 forward_batch is not None
             ), "TeaCacheStrategy required the forward_batch not be None"
-            self.teacache_params = getattr(forward_batch.sampling_params, "teacache_params", None)
+            self.cache_params = getattr(forward_batch.sampling_params, "teacache_params", None)
 
             # set the number of inference steps
             assert (
-                self.teacache_params is not None
-            ), "TeaCacheStrategy requires teacache_params in sampling_params"
+                self.cache_params is not None
+            ), "TeaCacheStrategy requires cache_params in sampling_params"
             self.num_steps = int(forward_batch.num_inference_steps)
 
             # set the teacache coefficients
-            if self.teacache_params.coefficients_callback:
-                self.coefficients = self.teacache_params.coefficients_callback(
-                    self.teacache_params
+            if self.cache_params.coefficients_callback:
+                self.coefficients = self.cache_params.coefficients_callback(
+                    self.cache_params
                 )
             else:
-                self.coefficients = self.teacache_params.coefficients
+                self.coefficients = self.cache_params.coefficients
 
             # set the start and end skippable steps
             self.start_skipping, self.end_skipping = self.get_skip_boundaries(
-                self.teacache_params.start_skipping,
-                self.teacache_params.end_skipping,
+                self.cache_params.start_skipping,
+                self.cache_params.end_skipping,
                 self.num_steps,
                 do_cfg=forward_batch.do_classifier_free_guidance,
             )
@@ -193,7 +193,7 @@ class TeaCacheStrategy:
     ) -> bool:
         """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
-        assert self.teacache_params is not None
+        assert self.cache_params is not None
 
         # No valid skip window for this generation
         if self.start_skipping is None or self.end_skipping is None:
@@ -220,7 +220,7 @@ class TeaCacheStrategy:
         state.accumulated_rel_l1_distance += rescaled
 
         # If below threshold, skip the forward pass
-        if state.accumulated_rel_l1_distance < self.teacache_params.rel_l1_thresh:
+        if state.accumulated_rel_l1_distance < self.cache_params.rel_l1_thresh:
             return True
 
         # If threshold exceeded, reset accumulated so next window starts fresh
@@ -237,7 +237,7 @@ class TeaCacheStrategy:
         **kwargs,
     ) -> None:
         """After the forward pass, cache the residual and the current modulated input."""
-        assert self.teacache_params is not None
+        assert self.cache_params is not None
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()
         state.update(modulated_input, residual)
