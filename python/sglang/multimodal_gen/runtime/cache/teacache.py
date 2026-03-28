@@ -109,7 +109,7 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def get_skip_boundaries(
+    def _get_skip_boundaries(
         self, start_skipping, end_skipping, num_inference_steps: int, do_cfg: bool
     ) -> tuple[int, int]:
         def _resolve_boundary(value: int | float) -> int:
@@ -182,7 +182,7 @@ class TeaCacheStrategy:
                 self.coefficients = self.cache_params.coefficients
 
             # set the start and end skippable steps
-            self.start_skipping, self.end_skipping = self.get_skip_boundaries(
+            self.start_skipping, self.end_skipping = self._get_skip_boundaries(
                 self.cache_params.start_skipping,
                 self.cache_params.end_skipping,
                 self.num_steps,
