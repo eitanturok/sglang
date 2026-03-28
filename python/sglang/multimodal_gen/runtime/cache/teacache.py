@@ -102,7 +102,9 @@ class TeaCacheStrategy:
         )
 
         forward_batch = get_forward_context().forward_batch
-        is_cfg_negative = forward_batch.is_cfg_negative if forward_batch is not None else False
+        is_cfg_negative = (
+            forward_batch.is_cfg_negative if forward_batch is not None else False
+        )
         if is_cfg_negative and self.state_neg is not None:
             return self.state_neg
         return self.state
@@ -161,7 +163,9 @@ class TeaCacheStrategy:
             assert (
                 forward_batch is not None
             ), "TeaCacheStrategy required the forward_batch not be None"
-            self.cache_params = getattr(forward_batch.sampling_params, "teacache_params", None)
+            self.cache_params = getattr(
+                forward_batch.sampling_params, "teacache_params", None
+            )
 
             # set the number of inference steps
             assert (
