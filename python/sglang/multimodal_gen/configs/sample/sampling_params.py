@@ -161,9 +161,8 @@ class SamplingParams:
 
     # TeaCache parameters
     enable_teacache: bool = False
-    teacache_params: Any = (
-        None  # TeaCacheParams or WanTeaCacheParams, set by model-specific subclass
-    )
+    cache_params: Any | None = None
+    calibrate_cache: bool = False
 
     # Profiling
     profile: bool = False
@@ -614,6 +613,12 @@ class SamplingParams:
         add_argument(
             "--enable-teacache",
             action="store_true",
+        )
+        add_argument(
+            "--calibrate-cache",
+            action="store_true",
+            default=SamplingParams.calibrate_cache,
+            help="Compute the values needed for caching.",
         )
 
         # profiling
