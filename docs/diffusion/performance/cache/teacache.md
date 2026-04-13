@@ -36,9 +36,7 @@ accumulated += poly(coefficients)(rel_l1)
 
 ### CFG Support
 
-For models that support CFG cache separation (Wan, Hunyuan, Z-Image), TeaCache maintains separate caches for positive and negative branches:
-- `previous_modulated_input` / `previous_residual` for positive branch
-- `previous_modulated_input_negative` / `previous_residual_negative` for negative branch
+For models that support CFG cache separation (Wan, Hunyuan, Z-Image), `TeaCacheStrategy` maintains two separate `TeaCacheState` objects for the positive and negative branches.
 
 For models that don't support CFG separation (Flux, Qwen), TeaCache is automatically disabled when CFG is enabled.
 
