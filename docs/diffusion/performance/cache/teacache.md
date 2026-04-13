@@ -13,7 +13,19 @@ TeaCache works by:
 3. When accumulated distance is below a threshold, reusing the cached residual
 4. Supporting CFG (Classifier-Free Guidance) with separate positive/negative caches
 
-## How It Works
+## Implementation
+
+TeaCache is split into three classes:
+
+- **`TeaCacheParams`** — pure data class holding user-set parameters (`rel_l1_thresh`, `coefficients`, `start_skipping`, `end_skipping`). Set once per request, never mutated during inference.
+- **`TeaCacheState`** — runtime state for one CFG branch: `step`, `previous_modulated_input`, `previous_residual`, `accumulated_rel_l1_distance`. Reset at the start of each generation.
+- **`TeaCacheStrategy`** — all the logic. Owns two `TeaCacheState` objects (positive + optional negative CFG branch) and reads from `TeaCacheParams` to decide when to skip.
+
+At each denoising step, `TeaCacheStrategy` calls:
+1. `maybe_reset()` — resets state if a generation just finished, initializes params at step 0, increments step counter
+2. `should_skip()` — computes accumulated L1 distance and returns whether to skip
+3. `read()` — if skipping, reads the cached residual and adds it to hidden states
+4. `write()` — if computing, writes the new residual and modulated input to the cache
 
 ### L1 Distance Tracking
 
@@ -36,7 +48,7 @@ accumulated += poly(coefficients)(rel_l1)
 
 ### CFG Support
 
-For models that support CFG cache separation (Wan, Hunyuan, Z-Image), `TeaCacheStrategy` maintains two separate `TeaCacheState` objects for the positive and negative branches.
+For models that support CFG separation (Wan, Hunyuan, Z-Image), `TeaCacheStrategy` maintains separate `TeaCacheState` objects for the positive and negative branches.
 
 For models that don't support CFG separation (Flux, Qwen), TeaCache is automatically disabled when CFG is enabled.
 
@@ -48,7 +60,7 @@ TeaCache is configured via `TeaCacheParams` in the sampling parameters:
 from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
 
 params = TeaCacheParams(
-    teacache_thresh=0.1,           # Threshold for accumulated L1 distance
+    rel_l1_thresh=0.1,           # Threshold for accumulated L1 distance
     coefficients=[1.0, 0.0, 0.0],  # Polynomial coefficients for L1 rescaling
 )
 ```
@@ -57,7 +69,7 @@ params = TeaCacheParams(
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `teacache_thresh` | float | Threshold for accumulated L1 distance. Lower = more caching, faster but potentially lower quality |
+| `rel_l1_thresh` | float | Threshold for accumulated L1 distance. Lower = more caching, faster but potentially lower quality |
 | `coefficients` | list[float] | Polynomial coefficients for L1 rescaling. Model-specific tuning |
 
 ### Model-Specific Configurations
