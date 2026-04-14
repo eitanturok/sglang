@@ -944,7 +944,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         )
 
         # For type checking
-        self.cnt = 0
         self.__post_init__()
 
         # misc
@@ -1000,7 +999,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
     ) -> torch.Tensor:
 
         # if caching is enabled, we might initialize or reset the cache state
-        self.maybe_init_cache(timestep)
+        self.maybe_init_cache()
         if self.cache:
             self.cache.maybe_reset()
 
@@ -1146,9 +1145,8 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         # if caching is enabled, we might be able to skip the forward pass
         should_skip_forward = False
         if self.cache:
-            modulated_input = (
-                timestep_proj if self.cache.cache_params.use_ret_steps else temb
-            )
+            use_ret_steps = forward_batch.sampling_params.teacache_params.use_ret_steps
+            modulated_input = timestep_proj if use_ret_steps else temb
             should_skip_forward = self.cache.should_skip(modulated_input)
 
         if should_skip_forward:
@@ -1170,7 +1168,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     original_hidden_states,
                     modulated_input=modulated_input,
                 )
-        self.cnt += 1
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()

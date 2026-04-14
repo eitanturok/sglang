@@ -12,14 +12,10 @@ References:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
 import torch
-
-if TYPE_CHECKING:
-    from sglang.multimodal_gen.configs.sample.teacache import TeaCacheParams
 
 
 def _rescale_distance_tensor(
@@ -57,13 +53,6 @@ class TeaCacheState:
         self.previous_residual: torch.Tensor | None = None
         self.accumulated_rel_l1_distance: torch.Tensor | None = None
 
-    def reset(self) -> None:
-        """Clear all cached tensors and reset the step counter for a new generation."""
-        self.step = 0
-        self.previous_modulated_input = None
-        self.previous_residual = None
-        self.accumulated_rel_l1_distance = None
-
     def update(
         self, modulated_inp: torch.Tensor | None, previous_residual: torch.Tensor | None
     ) -> None:
@@ -82,18 +71,21 @@ class TeaCacheStrategy:
     negative CFG branch) and stores parameters needed to make the skip decision.
     """
 
-    def __init__(self, supports_cfg: bool) -> None:
-        """Initialize cache states for positive and optional negative CFG branches."""
-        # params updated every forward pass
+    def __init__(
+        self,
+        supports_cfg: bool,
+        coefficients: list[float],
+        rel_l1_thresh: float,
+        start_skipping: int | None,
+        end_skipping: int | None,
+    ) -> None:
+        """Initialize cache states and all generation parameters."""
         self.state = TeaCacheState()
         self.state_neg = TeaCacheState() if supports_cfg else None
-        # params updated at the start of each new generation
-        # set in maybe_reset()
-        self.cache_params: TeaCacheParams | None = None
-        self.coefficients: list[float] = []
-        self.num_steps: int = 0
-        self.start_skipping: int | None = None
-        self.end_skipping: int | None = None
+        self.coefficients = coefficients
+        self.rel_l1_thresh = rel_l1_thresh
+        self.start_skipping = start_skipping
+        self.end_skipping = end_skipping
 
     def _get_state(self) -> TeaCacheState:
         """Select the appropriate cache state (positive/negative cfg) based on the forward context."""
@@ -109,58 +101,15 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def maybe_reset(self, **kwargs) -> None:
-        """Maybe reset the TeaCacheState by doing three things:
-
-        1. Reset TeaCacheState if the previous generation is complete
-        2. Initialize parameters if at the start of a new generation.
-        3. Increment the state's timestep counter (always)
-
-        Called on every forward pass before should_skip().
-        """
-        from sglang.multimodal_gen.runtime.managers.forward_context import (
-            get_forward_context,
-        )
-
-        state = self._get_state()
-
-        # Reset state if we completed a generation
-        if state.step == self.num_steps and state.step > 0:
-            state.reset()
-
-        # Initialize values at the start of each new generation
-        if state.step == 0:
-
-            # set the teacache parameters
-            forward_batch = get_forward_context().forward_batch
-            assert (
-                forward_batch is not None
-            ), "TeaCacheStrategy required the forward_batch not be None"
-            self.cache_params = getattr(
-                forward_batch.sampling_params, "teacache_params", None
-            )
-
-            # set the number of inference steps
-            assert (
-                self.cache_params is not None
-            ), "TeaCacheStrategy requires cache_params in sampling_params"
-            self.num_steps = int(forward_batch.num_inference_steps)
-
-            # get teacache coefficients and skip boundaries
-            self.coefficients = self.cache_params._get_coefficients()
-            self.start_skipping, self.end_skipping = (
-                self.cache_params._get_skip_boundaries(self.num_steps)
-            )
-
-        # always increment the number of steps
-        state.step += 1
+    def maybe_reset(self) -> None:
+        """Increment the step counter."""
+        self._get_state().step += 1
 
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs
     ) -> bool:
         """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
-        assert self.cache_params is not None
 
         # No valid skip window for this generation
         if self.start_skipping is None or self.end_skipping is None:
@@ -187,7 +136,7 @@ class TeaCacheStrategy:
         state.accumulated_rel_l1_distance += rescaled
 
         # If below threshold, skip the forward pass
-        if state.accumulated_rel_l1_distance < self.cache_params.rel_l1_thresh:
+        if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
             return True
 
         # If threshold exceeded, reset accumulated so next window starts fresh
@@ -204,7 +153,6 @@ class TeaCacheStrategy:
         **kwargs,
     ) -> None:
         """After the forward pass, cache the residual and the current modulated input."""
-        assert self.cache_params is not None
         residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()
         state.update(modulated_input, residual)

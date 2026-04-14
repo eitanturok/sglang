@@ -127,7 +127,7 @@ class CachableDiT(BaseDiT):
         self.cache: TeaCacheStrategy | None = None
         self.calibrate_cache: bool = False
 
-    def maybe_init_cache(self, timestep: int) -> None:
+    def maybe_init_cache(self) -> None:
         """Construct the cache strategy from the current forward_batch context.
 
         Called lazily on the first forward pass because sampling params
@@ -144,11 +144,27 @@ class CachableDiT(BaseDiT):
         # caching strategies may handle pos/neg cfg separately
         supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
-        # initialize cache at the start of each new generation (timestep == 0 and cfg is positive for cfg-supporting models)
-        if timestep == 0 and ((supports_cfg and not forward_batch.is_cfg_negative) or not supports_cfg):
+        # initialize cache at the start of each new generation (step index == 0 and cfg is positive for cfg-supporting models)
+        current_timestep = get_forward_context().current_timestep
+        if current_timestep == 0 and (
+            (supports_cfg and not forward_batch.is_cfg_negative) or not supports_cfg
+        ):
             # select caching strategy
-            if forward_batch.enable_teacache:
-                self.cache = TeaCacheStrategy(supports_cfg)
+            cache_params = getattr(
+                forward_batch.sampling_params, "teacache_params", None
+            )
+            if forward_batch.enable_teacache and cache_params is not None:
+                num_steps = int(forward_batch.num_inference_steps)
+                start_skipping, end_skipping = cache_params._get_skip_boundaries(
+                    num_steps
+                )
+                self.cache = TeaCacheStrategy(
+                    supports_cfg,
+                    cache_params._get_coefficients(),
+                    cache_params.rel_l1_thresh,
+                    start_skipping,
+                    end_skipping,
+                )
             else:
                 self.cache = None
 
