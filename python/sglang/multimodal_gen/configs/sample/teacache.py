@@ -66,7 +66,7 @@ class TeaCacheParams(CacheParams):
         return self.coefficients
 
     def _get_skip_boundaries(
-        self, num_inference_steps: int, do_cfg: bool
+        self, num_inference_steps: int
     ) -> tuple[int | None, int | None]:
         def _resolve_boundary(value: int | float) -> int:
             if isinstance(value, float):
@@ -77,10 +77,6 @@ class TeaCacheParams(CacheParams):
 
         start_skipping = _resolve_boundary(self.start_skipping)
         end_skipping = _resolve_boundary(self.end_skipping)
-
-        if do_cfg:
-            start_skipping *= 2
-            end_skipping *= 2
 
         if start_skipping > end_skipping:
             logger.warning(

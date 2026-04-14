@@ -149,10 +149,7 @@ class TeaCacheStrategy:
             # get teacache coefficients and skip boundaries
             self.coefficients = self.cache_params._get_coefficients()
             self.start_skipping, self.end_skipping = (
-                self.cache_params._get_skip_boundaries(
-                    self.num_steps,
-                    forward_batch.do_classifier_free_guidance,
-                )
+                self.cache_params._get_skip_boundaries(self.num_steps)
             )
 
         # always increment the number of steps

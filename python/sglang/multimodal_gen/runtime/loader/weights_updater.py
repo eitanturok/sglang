@@ -46,7 +46,6 @@ from pathlib import Path
 import torch
 from torch.distributed.tensor import DTensor, distribute_tensor
 
-from sglang.multimodal_gen.runtime.cache.teacache import TeaCacheStrategy
 from sglang.multimodal_gen.runtime.loader.utils import (
     _list_safetensors_files,
 )
@@ -213,8 +212,8 @@ class WeightsUpdater:
 
         if success and flush_cache:
             for _, module in modules_to_update:
-                if isinstance(module, TeaCacheStrategy):
-                    module.reset_teacache_state()
+                if hasattr(module, "cache"):
+                    module.cache.reset()
 
         logger.info(message)
         return success, message
