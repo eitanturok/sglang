@@ -3,13 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
 from sglang.multimodal_gen.configs.sample.sampling_params import CacheParams
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
