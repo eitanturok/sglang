@@ -33,8 +33,10 @@ def _rescale_distance_tensor(
     coefficients: list[float], x: torch.Tensor
 ) -> torch.Tensor:
     """Polynomial rescaling using tensor operations (torch.compile friendly)."""
-    c = coefficients
-    return c[0] * x**4 + c[1] * x**3 + c[2] * x**2 + c[3] * x + c[4]
+    result = torch.zeros_like(x)
+    for i, c in enumerate(coefficients):
+        result = result + c * x ** (len(coefficients) - 1 - i)
+    return result
 
 
 def _compute_rel_l1_distance_tensor(
