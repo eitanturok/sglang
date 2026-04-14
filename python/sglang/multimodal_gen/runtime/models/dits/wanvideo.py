@@ -1000,8 +1000,6 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
         # if caching is enabled, we might initialize or reset the cache state
         self.maybe_init_cache()
-        if self.cache:
-            self.cache.maybe_reset()
 
         forward_context = get_forward_context()
         forward_batch = forward_context.forward_batch

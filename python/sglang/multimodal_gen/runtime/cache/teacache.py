@@ -101,22 +101,20 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def maybe_reset(self) -> None:
-        """Increment the step counter."""
-        self._get_state().step += 1
-
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs
     ) -> bool:
         """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
+        step = state.step
+        state.step += 1  # advance before returning, regardless of outcome
 
         # No valid skip window for this generation
         if self.start_skipping is None or self.end_skipping is None:
             return False
 
         # Boundary steps always compute
-        if state.step < self.start_skipping or state.step >= self.end_skipping:
+        if step < self.start_skipping or step >= self.end_skipping:
             return False
 
         # First time computing, no previous input to compare against
