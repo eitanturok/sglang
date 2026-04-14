@@ -213,7 +213,7 @@ class WeightsUpdater:
         if success and flush_cache:
             for _, module in modules_to_update:
                 if hasattr(module, "cache") and module.cache is not None:
-                    module.cache.reset()
+                    module.cache.reset_states()
 
         logger.info(message)
         return success, message

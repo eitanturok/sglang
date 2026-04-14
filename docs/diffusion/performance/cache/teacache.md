@@ -25,6 +25,7 @@ At each denoising step, the model calls:
 1. `cache.should_skip(modulated_input)` — advances the step counter, computes accumulated L1 distance, returns whether to skip
 2. `cache.read()` — if skipping, reads the residual from the cache and applies it to hidden states
 3. `cache.write()` — if computing, stores the new residual and modulated input in the cache
+4. `cache.reset_states()` — resets `state` and optionally `state_neg`, discarding any stale tensors
 
 ### L1 Distance Tracking
 

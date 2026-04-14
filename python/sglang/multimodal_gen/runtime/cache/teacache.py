@@ -73,6 +73,7 @@ class TeaCacheStrategy:
         end_skipping: int,
     ) -> None:
         """Initialize cache states and all generation parameters."""
+        self.supports_cfg = supports_cfg
         self.state = TeaCacheState()
         self.state_neg = TeaCacheState() if supports_cfg else None
         self.coefficients = coefficients
@@ -85,6 +86,11 @@ class TeaCacheStrategy:
                 f"end_skipping={end_skipping}). This can happen during warmup runs with "
                 "very few steps. Skipping disabled."
             )
+
+    def reset_states(self) -> None:
+        """Reset cache states, discarding any stale tensors from a previous generation."""
+        self.state = TeaCacheState()
+        self.state_neg = TeaCacheState() if self.supports_cfg else None
 
     def _get_state(self) -> TeaCacheState:
         """Select the appropriate cache state (positive/negative cfg) based on the forward context."""
