@@ -12,10 +12,21 @@ References:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 import torch
+
+
+@dataclass
+class TeaCacheState:
+    """Tracks step progress, cached tensors, and L1 distances for a single CFG path."""
+
+    step: int = 0
+    previous_modulated_input: torch.Tensor | None = None
+    previous_residual: torch.Tensor | None = None
+    accumulated_rel_l1_distance: torch.Tensor | None = None
 
 
 def _rescale_distance_tensor(
@@ -44,26 +55,6 @@ def _compute_rel_l1_distance_tensor(
     return rel_distance.squeeze()
 
 
-class TeaCacheState:
-    """Tracks step progress, cached tensors, and L1 distances for a single CFG path. Updated every timestep."""
-
-    def __init__(self) -> None:
-        self.step: int = 0
-        self.previous_modulated_input: torch.Tensor | None = None
-        self.previous_residual: torch.Tensor | None = None
-        self.accumulated_rel_l1_distance: torch.Tensor | None = None
-
-    def update(
-        self, modulated_inp: torch.Tensor | None, previous_residual: torch.Tensor | None
-    ) -> None:
-        """Store the current modulated input and its computed residual for possible future reuse."""
-        self.previous_modulated_input = modulated_inp
-        self.previous_residual = previous_residual
-
-    def __repr__(self):
-        return f"TeaCacheState(step={self.step}, accumulated_rel_l1_distance={self.accumulated_rel_l1_distance})"
-
-
 class TeaCacheStrategy:
     """Implements TeaCache to skip redundant diffusion forward passes.
 
@@ -76,8 +67,8 @@ class TeaCacheStrategy:
         supports_cfg: bool,
         coefficients: list[float],
         rel_l1_thresh: float,
-        start_skipping: int | None,
-        end_skipping: int | None,
+        start_skipping: int,
+        end_skipping: int,
     ) -> None:
         """Initialize cache states and all generation parameters."""
         self.state = TeaCacheState()
@@ -86,6 +77,12 @@ class TeaCacheStrategy:
         self.rel_l1_thresh = rel_l1_thresh
         self.start_skipping = start_skipping
         self.end_skipping = end_skipping
+        if start_skipping >= end_skipping:
+            logger.warning(
+                f"TeaCache skip window is invalid (start_skipping={start_skipping} >= "
+                f"end_skipping={end_skipping}). This can happen during warmup runs with "
+                "very few steps. Skipping disabled."
+            )
 
     def _get_state(self) -> TeaCacheState:
         """Select the appropriate cache state (positive/negative cfg) based on the forward context."""
@@ -109,11 +106,7 @@ class TeaCacheStrategy:
         step = state.step
         state.step += 1  # advance before returning, regardless of outcome
 
-        # No valid skip window for this generation
-        if self.start_skipping is None or self.end_skipping is None:
-            return False
-
-        # Boundary steps always compute
+        # Boundary steps always compute (also handles invalid window where start >= end)
         if step < self.start_skipping or step >= self.end_skipping:
             return False
 
@@ -151,9 +144,9 @@ class TeaCacheStrategy:
         **kwargs,
     ) -> None:
         """After the forward pass, cache the residual and the current modulated input."""
-        residual = hidden_states.squeeze(0) - original_hidden_states
         state = self._get_state()
-        state.update(modulated_input, residual)
+        state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
+        state.previous_modulated_input = modulated_input
 
     def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
         """Before the forward pass, read from the cache and apply it to the current hidden states."""

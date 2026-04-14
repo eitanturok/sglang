@@ -65,9 +65,7 @@ class TeaCacheParams(CacheParams):
             return self.coefficients_callback(self)
         return self.coefficients
 
-    def _get_skip_boundaries(
-        self, num_inference_steps: int
-    ) -> tuple[int | None, int | None]:
+    def _get_skip_boundaries(self, num_inference_steps: int) -> tuple[int, int]:
         def _resolve_boundary(value: int | float) -> int:
             if isinstance(value, float):
                 return int(num_inference_steps * value)
@@ -75,15 +73,6 @@ class TeaCacheParams(CacheParams):
                 return num_inference_steps + value
             return value
 
-        start_skipping = _resolve_boundary(self.start_skipping)
-        end_skipping = _resolve_boundary(self.end_skipping)
-
-        if start_skipping > end_skipping:
-            logger.warning(
-                f"TeaCache skip window is invalid. Expected start_skipping<=end_skipping but got {start_skipping=}"
-                f" > {end_skipping=})for {num_inference_steps=}. This can happen during warmup runs with very few"
-                " steps. TeaCache is disabled."
-            )
-            start_skipping, end_skipping = None, None
-
-        return start_skipping, end_skipping
+        return _resolve_boundary(self.start_skipping), _resolve_boundary(
+            self.end_skipping
+        )
