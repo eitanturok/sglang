@@ -1148,7 +1148,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
             should_skip_forward = self.cache.should_skip(modulated_input)
 
         if should_skip_forward:
-            # compute hidden_states using the cached state
+            # compute hidden_states by reading from the cached state
             hidden_states = self.cache.read(hidden_states)
         else:
             if self.cache:

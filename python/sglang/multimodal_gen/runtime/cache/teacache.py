@@ -104,7 +104,7 @@ class TeaCacheStrategy:
         """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
         state = self._get_state()
         step = state.step
-        state.step += 1  # advance before returning, regardless of outcome
+        state.step += 1  # always advance the step regardless of outcome
 
         # Boundary steps always compute (also handles invalid window where start >= end)
         if step < self.start_skipping or step >= self.end_skipping:

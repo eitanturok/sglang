@@ -73,6 +73,6 @@ class TeaCacheParams(CacheParams):
                 return num_inference_steps + value
             return value
 
-        return _resolve_boundary(self.start_skipping), _resolve_boundary(
-            self.end_skipping
-        )
+        start_skipping = _resolve_boundary(self.start_skipping)
+        end_skipping = _resolve_boundary(self.end_skipping)
+        return start_skipping, end_skipping
