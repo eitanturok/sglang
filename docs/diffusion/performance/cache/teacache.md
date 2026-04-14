@@ -18,14 +18,13 @@ TeaCache works by:
 TeaCache is split into three classes:
 
 - **`TeaCacheParams`** — pure data class holding user-set parameters (`rel_l1_thresh`, `coefficients`, `start_skipping`, `end_skipping`). Set once per request, never mutated during inference.
-- **`TeaCacheState`** — runtime state for one CFG branch: `step`, `previous_modulated_input`, `previous_residual`, `accumulated_rel_l1_distance`. Reset at the start of each generation.
-- **`TeaCacheStrategy`** — all the logic. Owns two `TeaCacheState` objects (positive + optional negative CFG branch) and reads from `TeaCacheParams` to decide when to skip.
+- **`TeaCacheState`** — dataclass holding runtime state for one CFG branch: `step`, `previous_modulated_input`, `previous_residual`, `accumulated_rel_l1_distance`.
+- **`TeaCacheStrategy`** — all the logic. Owns two `TeaCacheState` objects (positive + optional negative CFG branch). Constructed once per generation by `CachableDiT.maybe_init_cache()` with all parameters resolved upfront.
 
-At each denoising step, `TeaCacheStrategy` calls:
-1. `maybe_reset()` — resets state if a generation just finished, initializes params at step 0, increments step counter
-2. `should_skip()` — computes accumulated L1 distance and returns whether to skip
-3. `read()` — if skipping, reads the cached residual and adds it to hidden states
-4. `write()` — if computing, writes the new residual and modulated input to the cache
+At each denoising step, the model calls:
+1. `cache.should_skip(modulated_input)` — advances the step counter, computes accumulated L1 distance, returns whether to skip
+2. `cache.read()` — if skipping, reads the residual from the cache and applies it to hidden states
+3. `cache.write()` — if computing, stores the new residual and modulated input in the cache
 
 ### L1 Distance Tracking
 
