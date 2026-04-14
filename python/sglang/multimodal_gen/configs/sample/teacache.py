@@ -57,12 +57,12 @@ class TeaCacheParams(CacheParams):
     )
     use_ret_steps: bool | None = None
 
-    def _get_coefficients(self) -> list[float]:
+    def get_coefficients(self) -> list[float]:
         if self.coefficients_callback is not None:
             return self.coefficients_callback(self)
         return self.coefficients
 
-    def _get_skip_boundaries(self, num_inference_steps: int) -> tuple[int, int]:
+    def get_skip_boundaries(self, num_inference_steps: int) -> tuple[int, int]:
         def _resolve_boundary(value: int | float) -> int:
             if isinstance(value, float):
                 return int(num_inference_steps * value)

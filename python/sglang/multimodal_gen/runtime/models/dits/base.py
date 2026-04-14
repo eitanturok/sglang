@@ -110,28 +110,26 @@ class CachableDiT(BaseDiT):
     )
 
     def __init__(self, config: DiTConfig, **kwargs) -> None:
-        """
+        """Initialize cache state for a DiT model with caching support.
+
         Args:
             config: DiT model configuration.
             **kwargs: Passed through to BaseDiT (e.g. hf_config).
 
         Attributes:
-            cache: Active cache strategy, or a sentinel:
-                - None: uninitialized; init_cache() has not been called yet.
-                - False: no cache strategy requested.
-                - DiffusionCache: an active cache strategy (e.g. TeaCacheStrategy).
-            calibrate_cache: When True, run every forward pass to calibrate
-                the values needed for caching.
+            cache: None when uninitialized or when no caching was requested; otherwise an active TeaCacheStrategy.
+            calibrate_cache: When True, runs every forward pass to gather calibration data.
         """
         super().__init__(config, **kwargs)
         self.cache: TeaCacheStrategy | None = None
         self.calibrate_cache: bool = False
 
     def maybe_init_cache(self) -> None:
-        """Construct the cache strategy from the current forward_batch context.
+        """Initialize the cache strategy at the start of each new generation
+        (when timestep == 0 and cfg is positive for cfg-supporting models).
 
-        Called lazily on the first forward pass because sampling params
-        (e.g. `enable_teacache`) are only available then.
+        Since the cache parameters are contained in the sampling parameters which is only
+        accessible during the first forward pass, we cannot initialize the cache in CachableDiT.__init__.
         """
         from sglang.multimodal_gen.runtime.managers.forward_context import (
             get_forward_context,
@@ -155,12 +153,12 @@ class CachableDiT(BaseDiT):
             )
             if forward_batch.enable_teacache and cache_params is not None:
                 num_steps = int(forward_batch.num_inference_steps)
-                start_skipping, end_skipping = cache_params._get_skip_boundaries(
+                start_skipping, end_skipping = cache_params.get_skip_boundaries(
                     num_steps
                 )
                 self.cache = TeaCacheStrategy(
                     supports_cfg,
-                    cache_params._get_coefficients(),
+                    cache_params.get_coefficients(),
                     cache_params.rel_l1_thresh,
                     start_skipping,
                     end_skipping,
