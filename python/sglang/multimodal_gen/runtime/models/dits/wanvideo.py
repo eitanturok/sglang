@@ -944,6 +944,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         )
 
         # For type checking
+        self.cnt = 0
         self.__post_init__()
 
         # misc
@@ -999,8 +1000,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
     ) -> torch.Tensor:
 
         # if caching is enabled, we might initialize or reset the cache state
-        if self.cache is None:
-            self.init_cache()
+        self.maybe_init_cache(timestep)
         if self.cache:
             self.cache.maybe_reset()
 
@@ -1170,6 +1170,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
                     original_hidden_states,
                     modulated_input=modulated_input,
                 )
+        self.cnt += 1
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()

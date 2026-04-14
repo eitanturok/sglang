@@ -124,10 +124,10 @@ class CachableDiT(BaseDiT):
                 the values needed for caching.
         """
         super().__init__(config, **kwargs)
-        self.cache: TeaCacheStrategy | bool | None = None
+        self.cache: TeaCacheStrategy | None = None
         self.calibrate_cache: bool = False
 
-    def init_cache(self) -> None:
+    def maybe_init_cache(self, timestep: int) -> None:
         """Construct the cache strategy from the current forward_batch context.
 
         Called lazily on the first forward pass because sampling params
@@ -137,18 +137,20 @@ class CachableDiT(BaseDiT):
             get_forward_context,
         )
 
-        fb = get_forward_context().forward_batch
-        if fb is None:
+        forward_batch = get_forward_context().forward_batch
+        if forward_batch is None:
             return
 
         # caching strategies may handle pos/neg cfg separately
         supports_cfg = self.config.prefix.lower() in _CFG_SUPPORTED_PREFIXES
 
-        # select caching strategy
-        if fb.enable_teacache:
-            self.cache = TeaCacheStrategy(supports_cfg)
-        else:
-            self.cache = False
+        # initialize cache at the start of each new generation (timestep == 0 and cfg is positive for cfg-supporting models)
+        if timestep == 0 and ((supports_cfg and not forward_batch.is_cfg_negative) or not supports_cfg):
+            # select caching strategy
+            if forward_batch.enable_teacache:
+                self.cache = TeaCacheStrategy(supports_cfg)
+            else:
+                self.cache = None
 
     @classmethod
     def get_nunchaku_quant_rules(cls) -> dict[str, dict[str, Any]]:
