@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
 from sglang.multimodal_gen.configs.sample.sampling_params import CacheParams
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,3 +59,35 @@ class TeaCacheParams(CacheParams):
         default=None, repr=False
     )
     use_ret_steps: bool | None = None
+
+    def _get_coefficients(self) -> list[float]:
+        if self.coefficients_callback is not None:
+            return self.coefficients_callback(self)
+        return self.coefficients
+
+    def _get_skip_boundaries(
+        self, num_inference_steps: int, do_cfg: bool
+    ) -> tuple[int | None, int | None]:
+        def _resolve_boundary(value: int | float) -> int:
+            if isinstance(value, float):
+                return int(num_inference_steps * value)
+            if value < 0:
+                return num_inference_steps + value
+            return value
+
+        start_skipping = _resolve_boundary(self.start_skipping)
+        end_skipping = _resolve_boundary(self.end_skipping)
+
+        if do_cfg:
+            start_skipping *= 2
+            end_skipping *= 2
+
+        if start_skipping > end_skipping:
+            logger.warning(
+                f"TeaCache skip window is invalid. Expected start_skipping<=end_skipping but got {start_skipping=}"
+                f" > {end_skipping=})for {num_inference_steps=}. This can happen during warmup runs with very few"
+                " steps. TeaCache is disabled."
+            )
+            start_skipping, end_skipping = None, None
+
+        return start_skipping, end_skipping

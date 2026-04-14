@@ -109,33 +109,6 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def _get_skip_boundaries(
-        self, start_skipping, end_skipping, num_inference_steps: int, do_cfg: bool
-    ) -> tuple[int, int]:
-        def _resolve_boundary(value: int | float) -> int:
-            if isinstance(value, float):
-                return int(num_inference_steps * value)
-            if value < 0:
-                return num_inference_steps + value
-            return value
-
-        start_skipping = _resolve_boundary(start_skipping)
-        end_skipping = _resolve_boundary(end_skipping)
-
-        if do_cfg:
-            start_skipping *= 2
-            end_skipping *= 2
-
-        if start_skipping > end_skipping:
-            logger.warning(
-                f"TeaCache skip window is invalid. Expected start_skipping<=end_skipping but got {start_skipping=}"
-                f" > {end_skipping=})for {num_inference_steps=}. This can happen during warmup runs with very few"
-                " steps. TeaCache is disabled."
-            )
-            start_skipping, end_skipping = None, None
-
-        return start_skipping, end_skipping
-
     def maybe_reset(self, **kwargs) -> None:
         """Maybe reset the TeaCacheState by doing three things:
 
@@ -173,24 +146,17 @@ class TeaCacheStrategy:
             ), "TeaCacheStrategy requires cache_params in sampling_params"
             self.num_steps = int(forward_batch.num_inference_steps)
 
-            # set the teacache coefficients
-            if self.cache_params.coefficients_callback:
-                self.coefficients = self.cache_params.coefficients_callback(
-                    self.cache_params
+            # get teacache coefficients and skip boundaries
+            self.coefficients = self.cache_params._get_coefficients()
+            self.start_skipping, self.end_skipping = (
+                self.cache_params._get_skip_boundaries(
+                    self.num_steps,
+                    forward_batch.do_classifier_free_guidance,
                 )
-            else:
-                self.coefficients = self.cache_params.coefficients
-
-            # set the start and end skippable steps
-            self.start_skipping, self.end_skipping = self._get_skip_boundaries(
-                self.cache_params.start_skipping,
-                self.cache_params.end_skipping,
-                self.num_steps,
-                do_cfg=forward_batch.do_classifier_free_guidance,
             )
 
-            # increment the number of steps always
-            state.step += 1
+        # always increment the number of steps
+        state.step += 1
 
     def should_skip(
         self, modulated_input: torch.Tensor | None = None, **kwargs
