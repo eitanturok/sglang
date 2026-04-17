@@ -1161,11 +1161,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
 
             if self.cache:
                 # update the cache with the new hidden states
-                self.cache.write(
-                    hidden_states,
-                    original_hidden_states,
-                    modulated_input=modulated_input,
-                )
+                self.cache.write(hidden_states, original_hidden_states)
 
         if sequence_shard_enabled:
             hidden_states = hidden_states.contiguous()

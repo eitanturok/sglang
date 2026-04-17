@@ -116,6 +116,7 @@ class TeaCacheStrategy:
 
         # Boundary steps always compute (also handles invalid window where start >= end)
         if step < self.start_skipping or step >= self.end_skipping:
+            state.previous_modulated_input = modulated_input
             return False
 
         # First time computing, no previous input to compare against
@@ -123,6 +124,7 @@ class TeaCacheStrategy:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
             )
+            state.previous_modulated_input = modulated_input
             return False
 
         # compute the accumulated relative l1 distance
@@ -133,6 +135,9 @@ class TeaCacheStrategy:
         )
         rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
         state.accumulated_rel_l1_distance += rescaled
+
+        # Always advance the reference input (matching legacy per-step update behavior)
+        state.previous_modulated_input = modulated_input
 
         # If below threshold, skip the forward pass
         if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
@@ -148,13 +153,11 @@ class TeaCacheStrategy:
         self,
         hidden_states: torch.Tensor,
         original_hidden_states: torch.Tensor,
-        modulated_input: torch.Tensor | None = None,
         **kwargs,
     ) -> None:
-        """After the forward pass, cache the residual and the current modulated input."""
+        """After the forward pass, cache the residual."""
         state = self._get_state()
         state.previous_residual = hidden_states.squeeze(0) - original_hidden_states
-        state.previous_modulated_input = modulated_input
 
     def read(self, hidden_states: torch.Tensor, **kwargs) -> torch.Tensor:
         """Before the forward pass, read from the cache and apply it to the current hidden states."""
