@@ -26,7 +26,7 @@ class TeaCacheState:
     step: int = 0
     previous_modulated_input: torch.Tensor | None = None
     previous_residual: torch.Tensor | None = None
-    accumulated_rel_l1_distance: torch.Tensor | None = None
+    accumulated_rel_l1_distance: torch.Tensor | float = 0.0
 
 
 def _rescale_distance_tensor(
@@ -109,13 +109,9 @@ class TeaCacheStrategy:
     def should_skip(self, modulated_input: torch.Tensor) -> bool:
         """Decide whether this step can be skipped. Does not mutate state."""
         state = self._get_state()
-        step = state.step
-        if step < self.start_skipping or step >= self.end_skipping:
+        if state.step < self.start_skipping or state.step >= self.end_skipping:
             return False
-        if (
-            state.previous_modulated_input is None
-            or state.accumulated_rel_l1_distance is None
-        ):
+        if state.previous_modulated_input is None:
             return False
         rel_l1 = _compute_rel_l1_distance_tensor(
             modulated_input, state.previous_modulated_input
@@ -128,11 +124,7 @@ class TeaCacheStrategy:
         state = self._get_state()
         step = state.step
         state.step += 1
-        in_window = self.start_skipping <= step < self.end_skipping
-
-        if not in_window:
-            state.accumulated_rel_l1_distance = None
-        elif skipped:
+        if skipped:
             rel_l1 = _compute_rel_l1_distance_tensor(
                 modulated_input, state.previous_modulated_input
             )
