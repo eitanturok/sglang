@@ -22,9 +22,9 @@ TeaCache is split into three classes:
 - **`TeaCacheStrategy`** — all the logic. Owns two `TeaCacheState` objects (positive + optional negative CFG branch). Constructed once per generation by `CachableDiT.maybe_init_cache()` with all parameters resolved upfront.
 
 At each denoising step, the model calls:
-1. `cache.should_skip(modulated_input)` — advances the step counter, computes accumulated L1 distance, returns whether to skip
-2. `cache.read()` — if skipping, reads the residual from the cache and applies it to hidden states
-3. `cache.write()` — if computing, stores the new residual and modulated input in the cache
+1. `cache.step(modulated_input)` — advances the step counter, accumulates the rescaled L1 distance, returns `True` if the forward pass can be skipped
+2. `cache.read()` — if skipping, reads the cached residual and applies it to hidden states
+3. `cache.write()` — if computing, stores the new residual in the cache
 4. `cache.reset_states()` — resets `state` and optionally `state_neg`, discarding any stale tensors
 
 ### L1 Distance Tracking

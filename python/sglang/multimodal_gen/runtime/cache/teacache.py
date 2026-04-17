@@ -112,10 +112,13 @@ class TeaCacheStrategy:
         step = state.step
         state.step += 1
 
+        # Outside the skipping window — always compute, just track the reference.
         if step < self.start_skipping or step >= self.end_skipping:
             state.previous_modulated_input = modulated_input
             return False
 
+        # First step inside the window — no previous reference yet, so initialize
+        # the accumulator and record the reference; must compute this step.
         if state.previous_modulated_input is None:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
@@ -123,6 +126,7 @@ class TeaCacheStrategy:
             state.previous_modulated_input = modulated_input
             return False
 
+        # Accumulate how much the modulated input has drifted since the last compute step.
         rel_l1 = _compute_rel_l1_distance_tensor(
             modulated_input, state.previous_modulated_input
         )
@@ -130,9 +134,11 @@ class TeaCacheStrategy:
         state.accumulated_rel_l1_distance += rescaled
         state.previous_modulated_input = modulated_input
 
+        # Drift is still small — skip the forward pass.
         if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
             return True
 
+        # Drift exceeded threshold — compute this step and reset the accumulator.
         state.accumulated_rel_l1_distance = torch.zeros(
             1, device=modulated_input.device, dtype=modulated_input.dtype
         )
