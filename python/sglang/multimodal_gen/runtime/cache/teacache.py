@@ -106,36 +106,37 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def should_skip(self, modulated_input: torch.Tensor) -> bool:
-        """Decide whether this step can be skipped. Does not mutate state."""
+    def step(self, modulated_input: torch.Tensor) -> bool:
+        """Advance state and return whether this forward pass can be skipped."""
         state = self._get_state()
-        if state.step < self.start_skipping or state.step >= self.end_skipping:
+        step = state.step
+        state.step += 1
+
+        if step < self.start_skipping or step >= self.end_skipping:
+            state.previous_modulated_input = modulated_input
             return False
+
         if state.previous_modulated_input is None:
+            state.accumulated_rel_l1_distance = torch.zeros(
+                1, device=modulated_input.device, dtype=modulated_input.dtype
+            )
+            state.previous_modulated_input = modulated_input
             return False
+
         rel_l1 = _compute_rel_l1_distance_tensor(
             modulated_input, state.previous_modulated_input
         )
         rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
-        return (state.accumulated_rel_l1_distance + rescaled) < self.rel_l1_thresh
-
-    def advance(self, modulated_input: torch.Tensor, skipped: bool) -> None:
-        """Update state after a step. Always call once per forward pass after should_skip."""
-        state = self._get_state()
-        step = state.step
-        state.step += 1
-        if skipped:
-            rel_l1 = _compute_rel_l1_distance_tensor(
-                modulated_input, state.previous_modulated_input
-            )
-            state.accumulated_rel_l1_distance += _rescale_distance_tensor(
-                self.coefficients, rel_l1
-            )
-        else:
-            state.accumulated_rel_l1_distance = torch.zeros(
-                1, device=modulated_input.device, dtype=modulated_input.dtype
-            )
+        state.accumulated_rel_l1_distance += rescaled
         state.previous_modulated_input = modulated_input
+
+        if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
+            return True
+
+        state.accumulated_rel_l1_distance = torch.zeros(
+            1, device=modulated_input.device, dtype=modulated_input.dtype
+        )
+        return False
 
     def write(
         self,

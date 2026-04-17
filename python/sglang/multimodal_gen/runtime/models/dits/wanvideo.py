@@ -1145,8 +1145,7 @@ class WanTransformer3DModel(CachableDiT, OffloadableDiTMixin):
         if self.cache:
             use_ret_steps = forward_batch.sampling_params.teacache_params.use_ret_steps
             modulated_input = timestep_proj if use_ret_steps else temb
-            should_skip_forward = self.cache.should_skip(modulated_input)
-            self.cache.advance(modulated_input, should_skip_forward)
+            should_skip_forward = self.cache.step(modulated_input)
 
         if should_skip_forward:
             # compute hidden_states by reading from the cached state
