@@ -27,6 +27,7 @@ class TeaCacheState:
     previous_modulated_input: torch.Tensor | None = None
     previous_residual: torch.Tensor | None = None
     accumulated_rel_l1_distance: torch.Tensor | None = None
+    skippable: bool = False
 
 
 def _rescale_distance_tensor(
@@ -106,48 +107,40 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def should_skip(
-        self, modulated_input: torch.Tensor | None = None, **kwargs
-    ) -> bool:
-        """Decide whether this forward pass can be skipped based on the accumulated L1 distance of the modulated input."""
+    def advance(self, modulated_input: torch.Tensor) -> None:
+        """Advance state by one step: update the step counter, modulated input reference,
+        and accumulated L1 distance. Always call once per forward pass before should_skip.
+        """
         state = self._get_state()
+        prev = state.previous_modulated_input
         step = state.step
-        state.step += 1  # always advance the step regardless of outcome
+        state.step += 1
+        state.previous_modulated_input = modulated_input
 
-        # Boundary steps always compute (also handles invalid window where start >= end)
-        if step < self.start_skipping or step >= self.end_skipping:
-            state.previous_modulated_input = modulated_input
-            return False
-
-        # First time computing, no previous input to compare against
-        if state.accumulated_rel_l1_distance is None:
+        in_window = self.start_skipping <= step < self.end_skipping
+        if not in_window or prev is None or state.accumulated_rel_l1_distance is None:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
             )
-            state.previous_modulated_input = modulated_input
-            return False
+            state.skippable = False
+            return
 
-        # compute the accumulated relative l1 distance
-        assert state.previous_modulated_input is not None
-        assert modulated_input is not None
-        rel_l1 = _compute_rel_l1_distance_tensor(
-            modulated_input, state.previous_modulated_input
+        rel_l1 = _compute_rel_l1_distance_tensor(modulated_input, prev)
+        state.accumulated_rel_l1_distance += _rescale_distance_tensor(
+            self.coefficients, rel_l1
         )
-        rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
-        state.accumulated_rel_l1_distance += rescaled
 
-        # Always advance the reference input (matching legacy per-step update behavior)
-        state.previous_modulated_input = modulated_input
-
-        # If below threshold, skip the forward pass
         if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
-            return True
+            state.skippable = True
+        else:
+            state.accumulated_rel_l1_distance = torch.zeros(
+                1, device=modulated_input.device, dtype=modulated_input.dtype
+            )
+            state.skippable = False
 
-        # If threshold exceeded, reset accumulated so next window starts fresh
-        state.accumulated_rel_l1_distance = torch.zeros(
-            1, device=modulated_input.device, dtype=modulated_input.dtype
-        )
-        return False
+    def should_skip(self) -> bool:
+        """Return whether this forward pass can be skipped. Call after advance()."""
+        return self._get_state().skippable
 
     def write(
         self,
