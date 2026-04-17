@@ -27,7 +27,6 @@ class TeaCacheState:
     previous_modulated_input: torch.Tensor | None = None
     previous_residual: torch.Tensor | None = None
     accumulated_rel_l1_distance: torch.Tensor | None = None
-    skippable: bool = False
 
 
 def _rescale_distance_tensor(
@@ -108,8 +107,11 @@ class TeaCacheStrategy:
         return self.state
 
     def advance(self, modulated_input: torch.Tensor) -> None:
-        """Advance state by one step: update the step counter, modulated input reference,
+        """Advance state by one step: update step counter, modulated input reference,
         and accumulated L1 distance. Always call once per forward pass before should_skip.
+
+        accumulated_rel_l1_distance is None iff this step must be computed (out of window,
+        no previous reference, or threshold just exceeded). should_skip reads this directly.
         """
         state = self._get_state()
         prev = state.previous_modulated_input
@@ -118,29 +120,26 @@ class TeaCacheStrategy:
         state.previous_modulated_input = modulated_input
 
         in_window = self.start_skipping <= step < self.end_skipping
-        if not in_window or prev is None or state.accumulated_rel_l1_distance is None:
+        if not in_window or prev is None:
+            state.accumulated_rel_l1_distance = None
+            return
+
+        if state.accumulated_rel_l1_distance is None:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
             )
-            state.skippable = False
-            return
 
         rel_l1 = _compute_rel_l1_distance_tensor(modulated_input, prev)
         state.accumulated_rel_l1_distance += _rescale_distance_tensor(
             self.coefficients, rel_l1
         )
 
-        if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
-            state.skippable = True
-        else:
-            state.accumulated_rel_l1_distance = torch.zeros(
-                1, device=modulated_input.device, dtype=modulated_input.dtype
-            )
-            state.skippable = False
+        if state.accumulated_rel_l1_distance >= self.rel_l1_thresh:
+            state.accumulated_rel_l1_distance = None  # reset: force compute next step
 
     def should_skip(self) -> bool:
         """Return whether this forward pass can be skipped. Call after advance()."""
-        return self._get_state().skippable
+        return self._get_state().accumulated_rel_l1_distance is not None
 
     def write(
         self,
