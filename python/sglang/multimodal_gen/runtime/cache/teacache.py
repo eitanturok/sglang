@@ -106,40 +106,44 @@ class TeaCacheStrategy:
             return self.state_neg
         return self.state
 
-    def advance(self, modulated_input: torch.Tensor) -> None:
-        """Advance state by one step: update step counter, modulated input reference,
-        and accumulated L1 distance. Always call once per forward pass before should_skip.
-
-        accumulated_rel_l1_distance is None iff this step must be computed (out of window,
-        no previous reference, or threshold just exceeded). should_skip reads this directly.
-        """
+    def should_skip(self, modulated_input: torch.Tensor) -> bool:
+        """Decide whether this step can be skipped. Does not mutate state."""
         state = self._get_state()
-        prev = state.previous_modulated_input
+        step = state.step
+        if step < self.start_skipping or step >= self.end_skipping:
+            return False
+        if (
+            state.previous_modulated_input is None
+            or state.accumulated_rel_l1_distance is None
+        ):
+            return False
+        rel_l1 = _compute_rel_l1_distance_tensor(
+            modulated_input, state.previous_modulated_input
+        )
+        rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
+        return (state.accumulated_rel_l1_distance + rescaled) < self.rel_l1_thresh
+
+    def advance(self, modulated_input: torch.Tensor, skipped: bool) -> None:
+        """Update state after a step. Always call once per forward pass after should_skip."""
+        state = self._get_state()
         step = state.step
         state.step += 1
-        state.previous_modulated_input = modulated_input
-
         in_window = self.start_skipping <= step < self.end_skipping
-        if not in_window or prev is None:
-            state.accumulated_rel_l1_distance = None
-            return
 
-        if state.accumulated_rel_l1_distance is None:
+        if not in_window:
+            state.accumulated_rel_l1_distance = None
+        elif skipped:
+            rel_l1 = _compute_rel_l1_distance_tensor(
+                modulated_input, state.previous_modulated_input
+            )
+            state.accumulated_rel_l1_distance += _rescale_distance_tensor(
+                self.coefficients, rel_l1
+            )
+        else:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
             )
-
-        rel_l1 = _compute_rel_l1_distance_tensor(modulated_input, prev)
-        state.accumulated_rel_l1_distance += _rescale_distance_tensor(
-            self.coefficients, rel_l1
-        )
-
-        if state.accumulated_rel_l1_distance >= self.rel_l1_thresh:
-            state.accumulated_rel_l1_distance = None  # reset: force compute next step
-
-    def should_skip(self) -> bool:
-        """Return whether this forward pass can be skipped. Call after advance()."""
-        return self._get_state().accumulated_rel_l1_distance is not None
+        state.previous_modulated_input = modulated_input
 
     def write(
         self,
