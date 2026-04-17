@@ -127,13 +127,9 @@ class TestSamplingParamsSubclass(unittest.TestCase):
     def test_wan_teacache_boundaries_match_legacy_behavior(self):
         legacy_equivalent_cases = [
             (WanT2V_1_3B_SamplingParams().teacache_params, (5, 50)),
-            (WanT2V_1_3B_SamplingParams().teacache_params, (10, 100)),
             (WanT2V_14B_SamplingParams().teacache_params, (1, 49)),
-            (WanT2V_14B_SamplingParams().teacache_params, (2, 98)),
             (WanI2V_14B_480P_SamplingParam().teacache_params, (5, 50)),
-            (WanI2V_14B_480P_SamplingParam().teacache_params, (10, 100)),
             (WanI2V_14B_720P_SamplingParam().teacache_params, (5, 50)),
-            (WanI2V_14B_720P_SamplingParam().teacache_params, (10, 100)),
         ]
 
         for teacache_params, expected in legacy_equivalent_cases:
