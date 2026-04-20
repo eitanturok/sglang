@@ -26,7 +26,7 @@ class TeaCacheState:
     step: int = 0
     previous_modulated_input: torch.Tensor | None = None
     previous_residual: torch.Tensor | None = None
-    accumulated_rel_l1_distance: torch.Tensor | float = 0.0
+    accumulated_rel_l1_distance: torch.Tensor | None = None
 
 
 def _rescale_distance_tensor(
@@ -112,14 +112,17 @@ class TeaCacheStrategy:
         step = state.step
         state.step += 1
 
-        # Outside the skipping window — always compute, just track the reference.
+        # Outside the skipping window — always compute, track reference, and mark
+        # accumulator as uninitialized so the first in-window step doesn't skip.
         if step < self.start_skipping or step >= self.end_skipping:
             state.previous_modulated_input = modulated_input
+            state.accumulated_rel_l1_distance = None
             return False
 
-        # First step inside the window — no previous reference yet, so initialize
-        # the accumulator and record the reference; must compute this step.
-        if state.previous_modulated_input is None:
+        # First step inside the window — accumulator not yet initialized; must compute.
+        # (previous_modulated_input may already be set from outside-window steps, but the
+        # accumulator is None, which is the correct sentinel for "no in-window reference yet".)
+        if state.accumulated_rel_l1_distance is None:
             state.accumulated_rel_l1_distance = torch.zeros(
                 1, device=modulated_input.device, dtype=modulated_input.dtype
             )
