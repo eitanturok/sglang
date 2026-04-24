@@ -112,39 +112,31 @@ class TeaCacheStrategy:
         step = state.step
         state.step += 1
 
-        # Outside the skipping window — always compute, track reference, and mark
-        # accumulator as uninitialized so the first in-window step doesn't skip.
-        if step < self.start_skipping or step >= self.end_skipping:
-            state.previous_modulated_input = modulated_input
+        # Do not skip on the first step or if we are outside the skipping window
+        in_skip_window = self.start_skipping <= step < self.end_skipping
+        if state.previous_modulated_input is None or not in_skip_window:
             state.accumulated_rel_l1_distance = None
+            state.previous_modulated_input = modulated_input.clone()
             return False
 
-        # First step inside the window — accumulator not yet initialized; must compute.
-        # (previous_modulated_input may already be set from outside-window steps, but the
-        # accumulator is None, which is the correct sentinel for "no in-window reference yet".)
-        if state.accumulated_rel_l1_distance is None:
-            state.accumulated_rel_l1_distance = torch.zeros(
-                1, device=modulated_input.device, dtype=modulated_input.dtype
-            )
-            state.previous_modulated_input = modulated_input
-            return False
-
-        # Accumulate how much the modulated input has drifted since the last compute step.
+        # Compute the relative L1 distance and update the state
         rel_l1 = _compute_rel_l1_distance_tensor(
             modulated_input, state.previous_modulated_input
         )
         rescaled = _rescale_distance_tensor(self.coefficients, rel_l1)
-        state.accumulated_rel_l1_distance += rescaled
-        state.previous_modulated_input = modulated_input
+        state.accumulated_rel_l1_distance = (
+            rescaled
+            if state.accumulated_rel_l1_distance is None
+            else state.accumulated_rel_l1_distance + rescaled
+        )
+        state.previous_modulated_input = modulated_input.clone()
 
-        # Drift is still small — skip the forward pass.
+        # Skip if accumulated rel l1 is small
         if state.accumulated_rel_l1_distance < self.rel_l1_thresh:
             return True
 
-        # Drift exceeded threshold — compute this step and reset the accumulator.
-        state.accumulated_rel_l1_distance = torch.zeros(
-            1, device=modulated_input.device, dtype=modulated_input.dtype
-        )
+        # Otherwise reset the accumulator and do not skip
+        state.accumulated_rel_l1_distance = None
         return False
 
     def write(
