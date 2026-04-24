@@ -33,6 +33,9 @@ def _rescale_distance_tensor(
     coefficients: list[float], x: torch.Tensor
 ) -> torch.Tensor:
     """Polynomial rescaling using tensor operations (torch.compile friendly)."""
+    x = (
+        x.float()
+    )  # upcast to float32 for numerical stability, especially with higher degree polynomials
     result = torch.zeros_like(x)
     for i, c in enumerate(coefficients):
         result = result + c * x ** (len(coefficients) - 1 - i)
@@ -43,6 +46,10 @@ def _compute_rel_l1_distance_tensor(
     current: torch.Tensor, previous: torch.Tensor
 ) -> torch.Tensor:
     """Compute relative L1 distance as a tensor (torch.compile friendly)."""
+    current, previous = (
+        current.float(),
+        previous.float(),
+    )  # upcast to float32 for numerical stability
     prev_mean = previous.abs().mean()
     curr_diff_mean = (current - previous).abs().mean()
     rel_distance = torch.where(
